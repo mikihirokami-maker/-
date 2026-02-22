@@ -3,244 +3,147 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ARK Architect Engine - Ultimate</title>
+    <title>ARK Real-AI Architect</title>
     <style>
-        :root { --main-color: #0ea5e9; --bg-dark: #020617; --panel-bg: #0f172a; --text-main: #f8fafc; --text-sub: #94a3b8; }
-        * { box-sizing: border-box; }
-        body { font-family: 'Helvetica Neue', Arial, sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        header { background: #0b1120; padding: 15px 20px; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 10; }
-        header h1 { margin: 0; font-size: 1.2rem; color: var(--main-color); letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
-        .status-indicator { width: 10px; height: 10px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 8px #22c55e; animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        :root { --main-color: #ff0055; --bg-dark: #0a0a0a; --panel-bg: #141414; --text-main: #f0f0f0; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        header { background: #000; padding: 15px 20px; border-bottom: 2px solid var(--main-color); font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         
-        #app-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
-        #chat-interface { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; scroll-behavior: smooth; }
+        /* APIキー設定画面 */
+        #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; padding: 20px; box-sizing: border-box; }
+        .setup-box { background: #1a1a1a; padding: 30px; border-radius: 10px; border: 1px solid #333; max-width: 400px; width: 100%; text-align: center; }
+        .setup-box input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 5px; border: 1px solid #444; background: #000; color: #fff; box-sizing: border-box; }
         
-        /* チャット吹き出しの装飾 */
-        .msg-wrapper { display: flex; flex-direction: column; max-width: 85%; animation: slideIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
-        .ai-wrapper { align-self: flex-start; }
-        .user-wrapper { align-self: flex-end; align-items: flex-end; }
-        .msg-sender { font-size: 0.75rem; color: var(--text-sub); margin-bottom: 4px; padding: 0 4px; }
-        .msg { padding: 16px 20px; border-radius: 12px; line-height: 1.6; font-size: 0.95rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .ai-msg { background: var(--panel-bg); border: 1px solid #1e293b; border-top-left-radius: 2px; }
-        .user-msg { background: var(--main-color); color: #000; border-top-right-radius: 2px; font-weight: bold; }
-        @keyframes slideIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-
-        /* 入力エリア */
-        .input-area { background: #0b1120; padding: 20px; display: flex; gap: 10px; border-top: 1px solid #1e293b; }
-        input { flex: 1; padding: 15px; border-radius: 8px; border: 1px solid #334155; background: #020617; color: white; font-size: 1rem; transition: 0.2s; }
-        input:focus { border-color: var(--main-color); outline: none; box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2); }
-        button { background: var(--main-color); color: #020617; border: none; padding: 0 25px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 1rem; }
-        button:hover { filter: brightness(1.1); transform: translateY(-1px); }
-
-        /* 設計図（ブループリント）専用の装飾 */
-        .blueprint-card { background: #0f172a; border: 1px solid #38bdf8; border-radius: 8px; margin-top: 15px; overflow: hidden; }
-        .bp-header { background: rgba(56, 189, 248, 0.1); padding: 15px; border-bottom: 1px solid #38bdf8; font-weight: bold; color: #38bdf8; display: flex; justify-content: space-between; }
-        .bp-content { padding: 20px; }
-        .step-block { margin-bottom: 25px; padding-left: 15px; border-left: 2px solid #334155; }
-        .step-title { color: #facc15; font-weight: bold; margin-bottom: 8px; font-size: 1.05rem; }
-        .material-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9rem; }
-        .material-table th, .material-table td { padding: 8px; border: 1px solid #334155; text-align: left; }
-        .material-table th { background: #1e293b; color: #94a3b8; }
-        .ark-tip { display: inline-block; background: #3f6212; color: #ecfccb; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; margin-bottom: 5px; }
+        /* チャット画面 */
+        #chat-interface { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+        .msg { max-width: 90%; padding: 15px 20px; border-radius: 10px; line-height: 1.6; font-size: 0.95rem; }
+        .ai-msg { background: var(--panel-bg); border-left: 3px solid var(--main-color); align-self: flex-start; }
+        .user-msg { background: #222; border-right: 3px solid #777; align-self: flex-end; }
+        
+        .input-area { background: #000; padding: 20px; display: flex; gap: 10px; border-top: 1px solid #222; }
+        input[type="text"] { flex: 1; padding: 15px; border-radius: 8px; border: 1px solid #333; background: #111; color: white; outline: none; }
+        input[type="text"]:focus { border-color: var(--main-color); }
+        button { background: var(--main-color); color: #fff; border: none; padding: 0 25px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        button:hover { opacity: 0.8; }
+        .loading { font-style: italic; color: #888; }
     </style>
 </head>
 <body>
 
 <header>
-    <h1><div class="status-indicator"></div> ARK Architect Engine</h1>
-    <span style="color:#64748b; font-size:0.8rem;">v2.0 Ultimate</span>
+    <span>🏗️ ARK リアルAI 建築コンサルタント</span>
+    <button onclick="resetKey()" style="padding: 5px 10px; font-size: 0.8rem; background: #333;">設定リセット</button>
 </header>
 
-<div id="app-container">
-    <div id="chat-interface"></div>
+<div id="setup-screen">
+    <div class="setup-box">
+        <h2 style="color: #ff0055; margin-top: 0;">AIエンジン接続設定</h2>
+        <p style="font-size: 0.9rem; color: #aaa;">本物のAIを動かすには、Googleの無料APIキーが必要です。</p>
+        <input type="password" id="apiKeyInput" placeholder="APIキーを貼り付けてください">
+        <button onclick="saveKey()" style="width: 100%; padding: 15px;">接続を開始する</button>
+    </div>
 </div>
 
+<div id="chat-interface"></div>
+
 <div class="input-area">
-    <input type="text" id="userInput" placeholder="例：雪山に建てる3階建ての石の要塞。1階は恐竜用。" autocomplete="off" onkeypress="if(event.keyCode==13) Engine.processInput()">
-    <button onclick="Engine.processInput()">解析・送信</button>
+    <input type="text" id="userInput" placeholder="例：レッドウッドに巨大なツリーハウスを作りたい。手順と注意点は？" onkeypress="if(event.keyCode==13) sendMessage()">
+    <button onclick="sendMessage()">送信</button>
 </div>
 
 <script>
-/**
- * ARK 建築ロジックエンジン
- * ユーザーの入力を自然言語処理(簡易版)で解析し、具体的な建築手順を生成する
- */
-const Engine = {
-    chatBox: document.getElementById('chat-interface'),
-    inputField: document.getElementById('userInput'),
-    state: 0,
-    
-    // 建築データの一時保存
-    memory: {
-        theme: "未定",
-        biome: "平原",
-        material: "石",
-        size: { x: 5, y: 5, floors: 2 }, // デフォルトは5x5の2階建て
-        special: []
-    },
+    // APIキーの保存と読み込み
+    let apiKey = localStorage.getItem('gemini_api_key');
+    if (apiKey) {
+        document.getElementById('setup-screen').style.display = 'none';
+        appendMsg('System', 'AIエンジンへの接続が完了しました。ARKの建築について、どんなマニアックなことでも質問してください。毎回リアルタイムで考えて回答します。', 'ai');
+    }
 
-    // 初期化
-    init() {
-        this.appendMsg("System", `建築設計AIシステムを起動しました。<br>単なる見た目の提案ではなく、**「どう建てるか」という具体的な施工手順**を算出します。<br><br>まずは、あなたの作りたい建物の**「テーマ（和風、城、モダンなど）」**と**「主な素材（木、石、金属など）」**を教えてください。`, 'ai');
-    },
+    function saveKey() {
+        const key = document.getElementById('apiKeyInput').value.trim();
+        if (key) {
+            localStorage.setItem('gemini_api_key', key);
+            apiKey = key;
+            document.getElementById('setup-screen').style.display = 'none';
+            appendMsg('System', '接続に成功しました。建築プランをどうぞ！', 'ai');
+        }
+    }
 
-    // 入力処理
-    processInput() {
-        const text = this.inputField.value.trim();
-        if (!text) return;
+    function resetKey() {
+        localStorage.removeItem('gemini_api_key');
+        location.reload();
+    }
 
-        this.appendMsg("You", text, 'user');
-        this.inputField.value = "";
+    const chatBox = document.getElementById('chat-interface');
+    const inputField = document.getElementById('userInput');
+
+    // 過去の会話を記憶する配列（AIの文脈理解用）
+    let conversationHistory = [];
+
+    function appendMsg(sender, text, type, id = null) {
+        const div = document.createElement('div');
+        div.className = `msg ${type}-msg`;
+        if (id) div.id = id;
+        // AIのマークダウン（**太字**など）を簡易的にHTML変換
+        let formattedText = text.replace(/\*\*(.*?)\*\*/g, '<strong><span style="color:#ff0055;">$1</span></strong>');
+        formattedText = formattedText.replace(/\n/g, '<br>');
+        div.innerHTML = formattedText;
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function sendMessage() {
+        const text = inputField.value.trim();
+        if (!text || !apiKey) return;
+
+        appendMsg('You', text, 'user');
+        inputField.value = "";
         
-        // 思考中エフェクト
-        const typingId = "typing-" + Date.now();
-        this.appendMsg("System", "<span style='color:#64748b;font-style:italic;'>解析中...</span>", 'ai', typingId);
+        const loadingId = 'loading-' + Date.now();
+        appendMsg('System', 'AIが独自に設計図を構築中...', 'ai', loadingId);
 
-        setTimeout(() => {
-            document.getElementById(typingId).remove();
-            this.analyzeAndRespond(text);
-        }, 800);
-    },
+        // AIへの命令（プロンプト）を作成
+        const systemInstruction = `あなたはゲーム「ARK: Survival Evolved」の超プロフェッショナルな建築家です。
+        テンプレートや定型文は絶対に一切使わず、毎回完全にオリジナルの言葉で、マニアックで具体的な建築のやり方（土台下げ、スナップポイントの活用、柱の隠し方など）を解説してください。
+        ユーザーの要望に合わせて、実践的なステップと、必要建材の概算を算出してください。`;
 
-    // チャット描画
-    appendMsg(sender, htmlContent, type, id = null) {
-        const wrapper = document.createElement('div');
-        wrapper.className = `msg-wrapper ${type}-wrapper`;
-        if (id) wrapper.id = id;
+        // 過去の会話と今回の質問を合体
+        let promptText = systemInstruction + "\n\n";
+        conversationHistory.forEach(h => {
+            promptText += `ユーザー: ${h.user}\n建築家: ${h.ai}\n\n`;
+        });
+        promptText += `ユーザー: ${text}\n建築家:`;
 
-        const nameLabel = document.createElement('div');
-        nameLabel.className = 'msg-sender';
-        nameLabel.innerText = sender;
+        try {
+            // Google Gemini API（本物のAI）へリクエストを送信！
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: promptText }] }]
+                })
+            });
 
-        const bubble = document.createElement('div');
-        bubble.className = `msg ${type}-msg`;
-        bubble.innerHTML = htmlContent;
+            const data = await response.json();
+            document.getElementById(loadingId).remove();
 
-        wrapper.appendChild(nameLabel);
-        wrapper.appendChild(bubble);
-        this.chatBox.appendChild(wrapper);
-        this.chatBox.scrollTop = this.chatBox.scrollHeight;
-    },
-
-    // 入力テキストの解析と応答分岐（ここがAIの脳）
-    analyzeAndRespond(text) {
-        if (this.state === 0) {
-            // 素材の推測
-            if(text.includes("木")) this.memory.material = "木";
-            if(text.includes("金属") || text.includes("鉄")) this.memory.material = "金属";
-            if(text.includes("TEK") || text.includes("tek")) this.memory.material = "TEK";
-            if(text.includes("ガラス") || text.includes("温室")) this.memory.material = "温室";
-            this.memory.theme = text;
-
-            this.appendMsg("System", `「${this.memory.material}」を基調とした「${this.memory.theme}」ですね。建材の耐久力とスナップ特性をデータベースにセットしました。<br><br>次に、**「建設予定地の地形（平地、崖、水上、雪山など）」**と、**「おおよその広さ（例：土台5x5くらい、巨大、コンパクトなど）」**を教えてください。`, 'ai');
-            this.state++;
-        } 
-        else if (this.state === 1) {
-            // 地形とサイズの推測
-            this.memory.biome = text;
-            if(text.includes("巨大") || text.includes("大きく")) { this.memory.size.x = 10; this.memory.size.y = 10; }
-            if(text.includes("小さ") || text.includes("コンパクト")) { this.memory.size.x = 3; this.memory.size.y = 3; }
-            
-            // 数字のNxNを抽出 (例: 6x6)
-            const sizeMatch = text.match(/([0-9０-９]+)[x×✖]([0-9０-９]+)/);
-            if(sizeMatch) {
-                this.memory.size.x = parseInt(sizeMatch[1]);
-                this.memory.size.y = parseInt(sizeMatch[2]);
+            if (data.error) {
+                appendMsg('Error', `エラーが発生しました: ${data.error.message}`, 'ai');
+                return;
             }
 
-            this.appendMsg("System", `地形環境とスケールを確認しました。予定サイズは土台換算で約 ${this.memory.size.x} × ${this.memory.size.y} と仮定して計算を回します。<br><br>最後に、この拠点に組み込みたい**「特殊な設備や用途（例：1階にアルゲンを入れたい、工業炉を置きたい、ブリーディング場にしたい）」**があれば教えてください。無ければ「なし」で構いません。`, 'ai');
-            this.state++;
+            const aiResponse = data.candidates[0].content.parts[0].text;
+            appendMsg('Architect', aiResponse, 'ai');
+
+            // 会話履歴を保存（最大3往復まで記憶）
+            conversationHistory.push({ user: text, ai: aiResponse });
+            if (conversationHistory.length > 3) conversationHistory.shift();
+
+        } catch (error) {
+            document.getElementById(loadingId).remove();
+            appendMsg('Error', '通信に失敗しました。インターネット接続かAPIキーを確認してください。', 'ai');
         }
-        else if (this.state === 2) {
-            this.memory.special = text;
-            this.appendMsg("System", `全パラメーターの取得完了。要求仕様に基づき、**施工手順と資材リストを含む設計図（ブループリント）**を生成します...`, 'ai');
-            
-            setTimeout(() => {
-                this.generateBlueprint();
-                this.state = 0; // リセット
-            }, 1500);
-        }
-    },
-
-    // 最終的な設計図と具体的な建築手順の生成
-    generateBlueprint() {
-        const m = this.memory;
-        const mat = m.material;
-        
-        // 資材の自動計算アルゴリズム
-        const foundations = m.size.x * m.size.y;
-        const wallsPerFloor = (m.size.x + m.size.y) * 2;
-        const totalWalls = wallsPerFloor * m.size.floors;
-        const ceilings = foundations * (m.size.floors); // 階層分の天井＋屋根
-
-        // 地形による基礎の張り方の違い
-        let foundationTrick = "";
-        if(m.biome.includes("水") || m.biome.includes("崖") || m.biome.includes("海")) {
-            foundationTrick = `**「柱＋天井」のいかだ方式**<br>地形が不安定なため、直接土台は置けません。まず海底/地面に「柱」を立て、そこに「天井」をスナップさせて人工の平地を作ります。柱の先端が床から突き出ないよう、柱の横にスナップさせて高さを調整してください。`;
-        } else {
-            foundationTrick = `**「土台下げ」による完全フラット化**<br>平地であってもARKの地面は凸凹です。「木の柱」を土台の真ん中にスナップさせ、横にもう一つ土台を置くことで高さを一段下げられます。これを繰り返し、地面にめり込む美しい基礎を作りましょう。`;
-        }
-
-        // 用途による間取りの違い
-        let interiorTrick = "";
-        if(m.special.includes("恐竜") || m.special.includes("アルゲン") || m.special.includes("ワイバーン")) {
-            interiorTrick = `1階部分は巨大門（恐竜用ゲート）を組み込むため、**壁の高さを最低でも「4段」**確保してください。スロープではなく「階段」パーツを壁沿いに配置すると、ペットの移動の邪魔になりません。`;
-        } else if(m.special.includes("炉") || m.special.includes("工業")) {
-            interiorTrick = `工業用炉は「土台3x3、高さ6マス」の空間が必要です。中央部分は2階の天井をぶち抜き（吹き抜け構造）、周囲をキャットウォークで囲むと操作しやすく、見た目も工場っぽくなります。`;
-        } else {
-            interiorTrick = `居住性を高めるため、壁は通常の壁ではなく「${mat}の窓付きの壁」を多用し、景色を取り込みます。角の部分に「斜めの壁」を使うと、豆腐建築（真四角の家）を脱却できます。`;
-        }
-
-        const html = `
-        <div class="blueprint-card">
-            <div class="bp-header">
-                <span>📘 施工計画書：${m.theme}仕様</span>
-                <span>規模: ${m.size.x}x${m.size.y}</span>
-            </div>
-            <div class="bp-content">
-                
-                <div class="step-block">
-                    <div class="step-title">【STEP 1】 基礎工事（地形適合）</div>
-                    <span class="ark-tip">重要テクニック</span><br>
-                    ${foundationTrick}
-                </div>
-
-                <div class="step-block">
-                    <div class="step-title">【STEP 2】 構造と階層の立ち上げ</div>
-                    ${interiorTrick}<br><br>
-                    外側と内側で壁の裏表（色が違う）が揃うように、設置時に**「Eキー（または△/Yボタン）」で反転**させるのを忘れずに。
-                </div>
-
-                <div class="step-block">
-                    <div class="step-title">【STEP 3】 屋根と仕上げの装飾</div>
-                    ただの平らな天井で塞ぐのではなく、「${mat}の傾斜屋根」と「傾斜した壁」を組み合わせて三角屋根を作ります。<br>
-                    一部を**「温室の天井」**に差し替えることで、昼間は照明不要の美しい自然光が差し込むようになります。
-                </div>
-
-                <div class="step-block">
-                    <div class="step-title">📊 要求資材リスト（概算）</div>
-                    <table class="material-table">
-                        <tr><th>パーツ名</th><th>必要数</th><th>用途</th></tr>
-                        <tr><td>${mat}の土台 (または柱/天井)</td><td>約 ${foundations} 個</td><td>1階の床面用</td></tr>
-                        <tr><td>${mat}の壁 / 窓付き壁</td><td>約 ${totalWalls} 枚</td><td>外壁および間仕切り</td></tr>
-                        <tr><td>${mat}の天井 / 傾斜屋根</td><td>約 ${ceilings} 枚</td><td>2階の床・屋根用</td></tr>
-                        <tr><td>木の柱 / はしご</td><td>数十個</td><td>建築補助・土台下げ用</td></tr>
-                    </table>
-                    <div style="font-size:0.8rem; color:#94a3b8; margin-top:8px;">※建築ミスによる破壊を考慮し、上記+20%の資材を用意して着工してください。</div>
-                </div>
-
-            </div>
-        </div>
-        <p>設計図を出力しました。この設計において、さらに「屋根の張り方」や「電気配線の隠し方」など、特定部分の詳しい解説が必要ですか？</p>
-        `;
-
-        this.appendMsg("System", html, 'ai');
     }
-};
-
-// 起動
-window.onload = () => { Engine.init(); };
 </script>
 </body>
 </html>
