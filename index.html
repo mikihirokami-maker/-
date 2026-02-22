@@ -22,7 +22,7 @@
 <header>🦖 ARK 建築コンサルタント AI</header>
 
 <div id="chat-box">
-    <div class="msg ai">こんにちは！内平さんの理想の拠点を形にするお手伝いをします。まずは、どんな「雰囲気」の家を作りたいですか？（例：和風、モダン、要塞など）</div>
+    <div class="msg ai">こんにちは！理想の拠点を形にするお手伝いをします。まずは、どんな「雰囲気」の家を作りたいですか？（例：和風、モダン、要塞など）</div>
 </div>
 
 <div class="input-area">
@@ -43,22 +43,21 @@
         addMsg(text, 'user');
         input.value = "";
 
-        // 対話ロジック
         setTimeout(() => {
             if (step === 0) {
                 data.style = text;
-                addMsg(`${text}ですね！センスがいいです。次に、その拠点を「どこ」に建てたいですか？（例：水上、雪山、レッドウッドなど）`, 'ai');
+                addMsg(`${text}ですね！素晴らしい選択です。次に、その拠点を「どこ」に建てたいですか？（例：水上、雪山、レッドウッドなど）`, 'ai');
                 step++;
             } else if (step === 1) {
                 data.place = text;
-                addMsg(`${text}は景色もいいし、やりがいがありますね！最後に、その拠点の「サイズ感」を教えてください。（例：1人暮らし用、大規模な恐竜保管庫付き、など）`, 'ai');
+                addMsg(`${text}での建築ですね。景観を活かした設計が楽しそうです！最後に、その拠点の「規模」を教えてください。（例：1人暮らし用、大規模な恐竜保管庫付き、など）`, 'ai');
                 step++;
             } else if (step === 2) {
                 data.size = text;
-                addMsg(`ありがとうございます！${data.style}風で${data.place}に建てる${text}の設計プランを考えました！<br><br>
-                <strong>【おすすめ資材】</strong><br>・${data.style == "和風" ? "木の土台と傾斜屋根" : "石の土台と温室の壁"}<br>
-                <strong>【アドバイス】</strong><br>・${data.place}なら、柱を多めに使って高床式にするとお洒落ですよ！`, 'ai');
-                step = 0; // ループしてまた最初から相談に乗れるように
+                addMsg(`ありがとうございます！${data.style}風で${data.place}に建てる${text}の設計プランをまとめました！<br><br>
+                <strong>【おすすめ資材】</strong><br>・${data.style.includes("和風") ? "石の土台と木の壁、傾斜屋根" : "金属の土台と温室の壁"}<br>
+                <strong>【建築のポイント】</strong><br>・${data.place}の地形に合わせて高低差をつけると、よりプロっぽい仕上がりになりますよ！`, 'ai');
+                step = 0;
             }
         }, 800);
     }
