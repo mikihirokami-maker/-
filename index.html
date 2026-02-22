@@ -3,64 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ARK 建築コンサルタント AI</title>
+    <title>ARK Architect AI - Professional</title>
     <style>
-        body { font-family: sans-serif; background: #0f172a; color: #f8fafc; margin: 0; display: flex; flex-direction: column; height: 100vh; }
-        header { background: #1e293b; padding: 15px; text-align: center; border-bottom: 2px solid #38bdf8; font-weight: bold; color: #38bdf8; }
-        #chat-box { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
-        .msg { max-width: 80%; padding: 12px 18px; border-radius: 15px; line-height: 1.5; font-size: 0.95rem; }
-        .ai { background: #334155; align-self: flex-start; border-bottom-left-radius: 2px; border: 1px solid #475569; }
-        .user { background: #38bdf8; color: #0f172a; align-self: flex-end; border-bottom-right-radius: 2px; font-weight: bold; }
-        .input-area { background: #1e293b; padding: 20px; display: flex; gap: 10px; border-top: 1px solid #334155; }
-        input { flex: 1; padding: 12px; border-radius: 8px; border: 2px solid #334155; background: #0f172a; color: white; outline: none; }
-        input:focus { border-color: #38bdf8; }
-        button { background: #38bdf8; color: #0f172a; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        :root { --accent: #00f2ff; --bg: #030712; --card: #111827; --text: #f3f4f6; }
+        body { font-family: 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        header { background: var(--card); padding: 20px; text-align: center; border-bottom: 1px solid var(--accent); box-shadow: 0 4px 20px rgba(0, 242, 255, 0.2); z-index: 10; }
+        header h1 { margin: 0; font-size: 1.2rem; letter-spacing: 2px; color: var(--accent); text-transform: uppercase; }
+        
+        #chat-box { flex: 1; overflow-y: auto; padding: 25px; display: flex; flex-direction: column; gap: 20px; scroll-behavior: smooth; }
+        .msg { max-width: 85%; padding: 15px 20px; border-radius: 18px; line-height: 1.6; font-size: 0.95rem; position: relative; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .ai { background: var(--card); align-self: flex-start; border: 1px solid #1f2937; border-bottom-left-radius: 2px; box-shadow: 5px 5px 15px rgba(0,0,0,0.3); }
+        .ai::before { content: "ARCHITECT"; position: absolute; top: -18px; left: 5px; font-size: 0.65rem; color: var(--accent); font-weight: bold; }
+        
+        .user { background: linear-gradient(135deg, #00f2ff, #0077ff); color: #000; align-self: flex-end; border-bottom-right-radius: 2px; font-weight: 500; }
+        
+        .input-area { background: var(--card); padding: 25px; display: flex; gap: 12px; border-top: 1px solid #1f2937; align-items: center; }
+        input { flex: 1; padding: 14px 20px; border-radius: 12px; border: 1px solid #374151; background: #000; color: white; font-size: 1rem; transition: 0.3s; }
+        input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 10px rgba(0, 242, 255, 0.3); }
+        button { background: var(--accent); color: #000; border: none; padding: 14px 25px; border-radius: 12px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button:hover { transform: scale(1.05); filter: brightness(1.1); }
+
+        .thinking { font-style: italic; color: #6b7280; font-size: 0.8rem; margin-bottom: 5px; }
+        strong { color: var(--accent); }
+        .plan-card { border: 1px solid var(--accent); padding: 15px; border-radius: 10px; margin-top: 10px; background: rgba(0, 242, 255, 0.05); }
     </style>
 </head>
 <body>
 
-<header>🦖 ARK 建築コンサルタント AI</header>
+<header><h1>ARK 建築コンサルタント Master Edition</h1></header>
 
 <div id="chat-box">
-    <div class="msg ai">こんにちは！理想の拠点を形にするお手伝いをします。まずは、どんな「雰囲気」の家を作りたいですか？（例：和風、モダン、要塞など）</div>
+    <div class="msg ai">
+        システム起動... 建築プロトコルを開始しました。<br><br>
+        サバイバー、あなたの理想を現実に変えます。どんな小さなこだわりでも構いません。まずは、あなたが思い描いている<strong>拠点の「コンセプト」や「使用目的」</strong>を自由に話してください。<br>
+        （例：雪山の絶壁に建つ要塞、水上の和風旅館、初心者でも作れる実用的な罠付き拠点など）
+    </div>
 </div>
 
 <div class="input-area">
-    <input type="text" id="userInput" placeholder="メッセージを入力..." onkeypress="if(event.keyCode==13) send()">
-    <button onclick="send()">送信</button>
+    <input type="text" id="userInput" placeholder="理想の建築イメージを入力してください..." onkeypress="if(event.keyCode==13) send()">
+    <button onclick="send()">設計開始</button>
 </div>
 
 <script>
     const chatBox = document.getElementById('chat-box');
     const input = document.getElementById('userInput');
-    let step = 0;
-    let data = { style: "", place: "", size: "" };
+    let memory = []; // 会話履歴の保存
+    let phase = 0;
 
-    function send() {
-        const text = input.value.trim();
-        if (!text) return;
-
-        addMsg(text, 'user');
-        input.value = "";
-
-        setTimeout(() => {
-            if (step === 0) {
-                data.style = text;
-                addMsg(`${text}ですね！素晴らしい選択です。次に、その拠点を「どこ」に建てたいですか？（例：水上、雪山、レッドウッドなど）`, 'ai');
-                step++;
-            } else if (step === 1) {
-                data.place = text;
-                addMsg(`${text}での建築ですね。景観を活かした設計が楽しそうです！最後に、その拠点の「規模」を教えてください。（例：1人暮らし用、大規模な恐竜保管庫付き、など）`, 'ai');
-                step++;
-            } else if (step === 2) {
-                data.size = text;
-                addMsg(`ありがとうございます！${data.style}風で${data.place}に建てる${text}の設計プランをまとめました！<br><br>
-                <strong>【おすすめ資材】</strong><br>・${data.style.includes("和風") ? "石の土台と木の壁、傾斜屋根" : "金属の土台と温室の壁"}<br>
-                <strong>【建築のポイント】</strong><br>・${data.place}の地形に合わせて高低差をつけると、よりプロっぽい仕上がりになりますよ！`, 'ai');
-                step = 0;
-            }
-        }, 800);
-    }
+    const architectBrain = {
+        style: "",
+        location: "",
+        scale: "",
+        details: []
+    };
 
     function addMsg(text, type) {
         const div = document.createElement('div');
@@ -68,6 +66,73 @@
         div.innerHTML = text;
         chatBox.appendChild(div);
         chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function send() {
+        const val = input.value.trim();
+        if (!val) return;
+
+        addMsg(val, 'user');
+        memory.push(val);
+        input.value = "";
+
+        // 「思考中」の演出
+        const thinking = document.createElement('div');
+        thinking.className = 'thinking';
+        thinking.textContent = "Architect AI is analyzing your request...";
+        chatBox.appendChild(thinking);
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        setTimeout(() => {
+            thinking.remove();
+            generateResponse(val);
+        }, 1200);
+    }
+
+    function generateResponse(val) {
+        let response = "";
+
+        if (phase === 0) {
+            architectBrain.style = val;
+            response = `<strong>「${val}」</strong>ですね。非常に興味深いプロジェクトです。<br><br>そのコンセプトを最大限に引き立てるために、<strong>「建設予定地」</strong>の地形を教えてください。平坦な場所か、崖際か、あるいは水上でしょうか？地形によって基礎の組み方を提案します。`;
+            phase++;
+        } else if (phase === 1) {
+            architectBrain.location = val;
+            response = `${val}での建設ですね。承知しました。高低差の処理が鍵になりそうです。<br><br>次に、この拠点に<strong>必ず入れたい機能</strong>は何ですか？（例：巨大生物の駐機場、工業用炉の設置、強固な防衛設備、あるいは完全な内装重視など）`;
+            phase++;
+        } else if (phase === 2) {
+            architectBrain.details.push(val);
+            response = `了解しました。${val}を組み込んだ設計ラインを構築します。<br><br>最後に、建築の<strong>「難易度」や「予算」</strong>について。手間がかかっても装飾を凝らしたプロ仕様にするか、それともコストパフォーマンスを重視した実用派か、どちらがお好みですか？`;
+            phase++;
+        } else {
+            // 最終プラン生成（ここが最大出力！）
+            response = createFinalPlan();
+            phase = 0; // リセット
+        }
+        addMsg(response, 'ai');
+    }
+
+    function createFinalPlan() {
+        const style = architectBrain.style;
+        const loc = architectBrain.location;
+        const details = architectBrain.details.join('、');
+        
+        return `
+            設計図が完成しました。あなたの要望をすべて統合した<strong>【${style}：${loc}特化型ビルド】</strong>をご提案します。<br><br>
+            <div class="plan-card">
+                <strong>■ 構造設計の要点</strong><br>
+                ・基礎は${loc.includes("水") ? "「柱」と「天井」を組み合わせた高床式" : "「石の土台」を敷き詰め、要所をフェンス土台で補強"}にします。<br>
+                ・${style}を表現するために、外壁は「窓付きの壁」と「斜め屋根」を交互に配置し、立体感を出しましょう。<br><br>
+                <strong>■ 推奨資材リスト（概算）</strong><br>
+                ・土台/天井パーツ：約120個<br>
+                ・壁パーツ（テクスチャ違い）：約200個<br>
+                ・温室パーツ（光の取り込み用）：約12個<br><br>
+                <strong>■ プロのワンポイントアドバイス</strong><br>
+                ・${details}を配置するエリアは、床を「金属」にすることで耐久性と重厚感を両立させます。<br>
+                ・<strong>隠し技:</strong> 柱をあえて「半分埋め込む」ことで、見た目の解像度が爆上がりします。
+            </div><br>
+            いかがでしょうか？さらに細かく「2階部分の間取り」や「おすすめのペイントカラー」について深掘りしますか？
+        `;
     }
 </script>
 </body>
