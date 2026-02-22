@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARK 建築コンサルタント AI</title>
+    <style>
+        body { font-family: sans-serif; background: #0f172a; color: #f8fafc; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        header { background: #1e293b; padding: 15px; text-align: center; border-bottom: 2px solid #38bdf8; font-weight: bold; color: #38bdf8; }
+        #chat-box { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        .msg { max-width: 80%; padding: 12px 18px; border-radius: 15px; line-height: 1.5; font-size: 0.95rem; }
+        .ai { background: #334155; align-self: flex-start; border-bottom-left-radius: 2px; border: 1px solid #475569; }
+        .user { background: #38bdf8; color: #0f172a; align-self: flex-end; border-bottom-right-radius: 2px; font-weight: bold; }
+        .input-area { background: #1e293b; padding: 20px; display: flex; gap: 10px; border-top: 1px solid #334155; }
+        input { flex: 1; padding: 12px; border-radius: 8px; border: 2px solid #334155; background: #0f172a; color: white; outline: none; }
+        input:focus { border-color: #38bdf8; }
+        button { background: #38bdf8; color: #0f172a; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<header>🦖 ARK 建築コンサルタント AI</header>
+
+<div id="chat-box">
+    <div class="msg ai">こんにちは！内平さんの理想の拠点を形にするお手伝いをします。まずは、どんな「雰囲気」の家を作りたいですか？（例：和風、モダン、要塞など）</div>
+</div>
+
+<div class="input-area">
+    <input type="text" id="userInput" placeholder="メッセージを入力..." onkeypress="if(event.keyCode==13) send()">
+    <button onclick="send()">送信</button>
+</div>
+
+<script>
+    const chatBox = document.getElementById('chat-box');
+    const input = document.getElementById('userInput');
+    let step = 0;
+    let data = { style: "", place: "", size: "" };
+
+    function send() {
+        const text = input.value.trim();
+        if (!text) return;
+
+        addMsg(text, 'user');
+        input.value = "";
+
+        // 対話ロジック
+        setTimeout(() => {
+            if (step === 0) {
+                data.style = text;
+                addMsg(`${text}ですね！センスがいいです。次に、その拠点を「どこ」に建てたいですか？（例：水上、雪山、レッドウッドなど）`, 'ai');
+                step++;
+            } else if (step === 1) {
+                data.place = text;
+                addMsg(`${text}は景色もいいし、やりがいがありますね！最後に、その拠点の「サイズ感」を教えてください。（例：1人暮らし用、大規模な恐竜保管庫付き、など）`, 'ai');
+                step++;
+            } else if (step === 2) {
+                data.size = text;
+                addMsg(`ありがとうございます！${data.style}風で${data.place}に建てる${text}の設計プランを考えました！<br><br>
+                <strong>【おすすめ資材】</strong><br>・${data.style == "和風" ? "木の土台と傾斜屋根" : "石の土台と温室の壁"}<br>
+                <strong>【アドバイス】</strong><br>・${data.place}なら、柱を多めに使って高床式にするとお洒落ですよ！`, 'ai');
+                step = 0; // ループしてまた最初から相談に乗れるように
+            }
+        }, 800);
+    }
+
+    function addMsg(text, type) {
+        const div = document.createElement('div');
+        div.className = `msg ${type}`;
+        div.innerHTML = text;
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+</script>
+</body>
+</html>
