@@ -22,6 +22,7 @@ st.markdown("""
     }
     .post-card { background: rgba(255, 255, 255, 0.05); padding: 20px; border-radius: 15px; border: 1px solid #00f2ff; margin-bottom: 20px; }
     .storage-box { background: rgba(0, 255, 0, 0.1); padding: 15px; border-radius: 10px; border: 1px dashed #00ff00; margin-bottom: 10px; }
+    .running-box { background: rgba(0, 0, 255, 0.1); padding: 20px; border-radius: 10px; border: 1px solid #00f2ff; text-align: center; margin: 20px 0; }
     img { border-radius: 10px; border: 1px solid #333; margin-top: 10px; }
 </style>
 """, unsafe_allow_html=True)
@@ -47,7 +48,6 @@ def save_json(file_path, data):
         if 'image_file' in item_copy:
             del item_copy['image_file'] 
         serializable_data.append(item_copy)
-    
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(serializable_data, f, ensure_ascii=False, indent=2)
 
@@ -67,6 +67,7 @@ if 'storage' not in st.session_state:
     st.session_state.storage = loaded_st
 
 if 'logs' not in st.session_state: st.session_state.logs = []
+if 'is_running' not in st.session_state: st.session_state.is_running = False # 自動化実行中フラグ
 
 # --- ユーティリティ関数 ---
 def get_jst_time():
@@ -131,7 +132,73 @@ def post_to_threads(account, text, image_obj=None):
     except Exception as e:
         return False, str(e)
 
-# --- サイドバー ---
+# --- 自動化実行ロジック (別画面で処理) ---
+if st.session_state.is_running:
+    st.title("🚀 自動化プロセス実行中")
+    st.info("ブラウザを閉じずにそのままお待ちください...")
+    
+    log_area = st.empty()
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # 実行リストのコピー
+    execution_list = list(st.session_state.storage)
+    total_tasks = len(execution_list)
+    
+    for i, p in enumerate(execution_list):
+        progress_bar.progress((i) / total_tasks if total_tasks > 0 else 0)
+        
+        if p['acc_idx'] >= len(st.session_state.accounts): continue
+        acc = st.session_state.accounts[p['acc_idx']]
+        
+        status_text.markdown(f"### ▶ 処理中 ({i+1}/{total_tasks}): {acc['name']}")
+        
+        # ランダム待機ロジック (カウントダウン表示)
+        if p['random']:
+            s, e = p['time_range']
+            if s >= e: e = 24
+            now = get_jst_time()
+            target_h = random.randint(s, max(s, e-1))
+            target_m = random.randint(0, 59)
+            target_time = now.replace(hour=target_h, minute=target_m, second=0)
+            wait_seconds = int((target_time - now).total_seconds())
+            
+            if wait_seconds > 0:
+                # カウントダウンループ (画面が白くならないように小刻みに更新)
+                for remaining in range(wait_seconds, 0, -1):
+                    status_text.warning(f"⏳ **待機中**: {target_h}:{target_m} に投稿します\n\nあと **{remaining}** 秒...")
+                    time.sleep(1)
+            else:
+                status_text.warning("時間が過ぎているため、即時投稿します")
+                time.sleep(2)
+        
+        status_text.info(f"📤 {acc['name']} に投稿を送信中...")
+        suc, msg = post_to_threads(acc, p['text'], p['image_file'])
+        
+        now_s = get_jst_time().strftime('%H:%M:%S')
+        res_icon = "✅" if suc else "❌"
+        log_msg = f"{res_icon} {now_s} [{acc['name']}] {msg}"
+        st.session_state.logs.append(log_msg)
+        log_area.code("\n".join(reversed(st.session_state.logs)))
+        
+        time.sleep(1)
+
+    progress_bar.progress(1.0)
+    status_text.success("すべての処理が完了しました！")
+    st.balloons()
+    
+    # 完了処理
+    st.session_state.storage = [] # 収納ボックスを空にする
+    save_json(STORAGE_FILE, st.session_state.storage)
+    
+    time.sleep(3)
+    st.session_state.is_running = False # フラグを戻す
+    st.rerun() # トップ画面に戻る
+
+# --- メイン画面 (通常時) ---
+st.title("THREADS AUTO MASTER ♾️")
+
+# サイドバー
 with st.sidebar:
     st.title("🤖 システム制御")
     st.info(f"🇯🇵 現在時刻 (JST)\n{get_jst_time().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -147,9 +214,6 @@ with st.sidebar:
             save_json(ACCOUNTS_FILE, st.session_state.accounts)
             st.success(f"{c}件更新完了")
     if st.button("ログクリア"): st.session_state.logs = []
-
-# --- メイン画面 ---
-st.title("THREADS AUTO MASTER ♾️")
 
 tab1, tab2, tab3 = st.tabs(["① アカウント設定", "② 投稿作成＆自動化", "③ 実行ログ"])
 
@@ -182,7 +246,7 @@ with tab1:
 with tab2:
     st.header("投稿ファクトリー")
     
-    # --- 収納ボックス (管理機能) ---
+    # --- 収納ボックス ---
     with st.expander("📦 収納ボックス (待機中の投稿)"):
         if not st.session_state.storage:
             st.info("待機中の投稿はありません")
@@ -209,110 +273,59 @@ with tab2:
     st.markdown("---")
     st.subheader("📝 新規作成 / 編集")
     
-    # 編集エリア
-    editor_placeholder = st.empty()
-    
-    with editor_placeholder.container():
-        if not st.session_state.accounts:
-            st.warning("先にアカウントを追加してください")
-        else:
-            acc_names = [a['name'] for a in st.session_state.accounts]
-            post = st.session_state.posts[0]
-            
-            st.markdown(f"""<div class="post-card">""", unsafe_allow_html=True)
-            c1, c2 = st.columns([1, 1])
-            with c1:
-                if post['acc_idx'] >= len(acc_names): post['acc_idx'] = 0
-                post['acc_idx'] = acc_names.index(st.selectbox(f"アカウント選択", acc_names, index=post['acc_idx'], key=f"s_0"))
-            with c2:
-                post['random'] = st.checkbox(f"ランダム時間を有効化", value=post['random'], key=f"r_0")
-                if post['random']:
-                    s, e = st.slider(f"時間帯設定", 0, 24, post['time_range'], key=f"sl_0")
-                    post['time_range'] = (s, e)
-            
-            c3, c4 = st.columns([1, 1])
-            with c3:
-                up = st.file_uploader(f"画像 (任意)", type=['png','jpg'], key=f"f_0")
-                if up: 
-                    post['image_file'] = up
-                    st.image(up, width=150)
-            with c4:
-                post['text'] = st.text_area(f"投稿本文", value=post['text'], height=100, key=f"t_0")
-            st.markdown("</div>", unsafe_allow_html=True)
+    if not st.session_state.accounts:
+        st.warning("先にアカウントを追加してください")
+    else:
+        acc_names = [a['name'] for a in st.session_state.accounts]
+        post = st.session_state.posts[0]
+        
+        st.markdown(f"""<div class="post-card">""", unsafe_allow_html=True)
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            if post['acc_idx'] >= len(acc_names): post['acc_idx'] = 0
+            post['acc_idx'] = acc_names.index(st.selectbox(f"アカウント選択", acc_names, index=post['acc_idx'], key=f"s_0"))
+        with c2:
+            post['random'] = st.checkbox(f"ランダム時間を有効化", value=post['random'], key=f"r_0")
+            if post['random']:
+                s, e = st.slider(f"時間帯設定", 0, 24, post['time_range'], key=f"sl_0")
+                post['time_range'] = (s, e)
+        
+        c3, c4 = st.columns([1, 1])
+        with c3:
+            up = st.file_uploader(f"画像 (任意)", type=['png','jpg'], key=f"f_0")
+            if up: 
+                post['image_file'] = up
+                st.image(up, width=150)
+        with c4:
+            post['text'] = st.text_area(f"投稿本文", value=post['text'], height=100, key=f"t_0")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-            save_json(POSTS_FILE, st.session_state.posts)
+        save_json(POSTS_FILE, st.session_state.posts)
 
-            st.markdown("---")
-            
-            # === 完了＆自動化ボタン ===
-            if st.button("✅ 完了＆自動化スタート (即時実行)", type="primary"):
-                current_post = st.session_state.posts[0]
-                if not current_post['text'] and not current_post['image_file']:
-                    st.error("本文または画像を入力してください")
-                else:
-                    target_acc_idx = current_post['acc_idx']
-                    
-                    # 1. 重複防止: 同じアカウントの古い待機投稿を削除
-                    st.session_state.storage = [p for p in st.session_state.storage if p['acc_idx'] != target_acc_idx]
-                    
-                    # 2. 新しい投稿を収納に追加
-                    st.session_state.storage.append(current_post)
-                    save_json(STORAGE_FILE, st.session_state.storage)
-                    
-                    # 3. 編集画面を「白紙」に即リセット
-                    st.session_state.posts = [{"text": "", "image_file": None, "acc_idx": 0, "random": False, "time_range": (12, 15)}]
-                    save_json(POSTS_FILE, st.session_state.posts)
-                    
-                    # 4. UIを消去して自動化モードへ
-                    editor_placeholder.empty() 
-                    
-                    st.success(f"投稿を受け付けました！自動化プロセスを開始します...")
-                    st.toast("自動化モード起動中...", icon="🚀")
-                    
-                    log_area = st.empty()
-                    
-                    # === 自動化ループ実行 ===
-                    # 実行リストの作成（ループ中の削除によるエラー防止のためコピーを使用）
-                    execution_list = list(st.session_state.storage)
-                    
-                    for i, p in enumerate(execution_list):
-                        if p['acc_idx'] >= len(st.session_state.accounts): continue
-                        acc = st.session_state.accounts[p['acc_idx']]
-                        
-                        st.info(f"▶ 処理中: {acc['name']} の投稿...")
-                        
-                        if p['random']:
-                            s, e = p['time_range']
-                            if s >= e: e = 24
-                            now = get_jst_time()
-                            target_h = random.randint(s, max(s, e-1))
-                            target_m = random.randint(0, 59)
-                            target_time = now.replace(hour=target_h, minute=target_m, second=0)
-                            wait = (target_time - now).total_seconds()
-                            
-                            if wait > 0:
-                                st.warning(f"⏳ 待機モード: {target_h}:{target_m} に投稿します ({int(wait)}秒待機中...)")
-                                time.sleep(wait)
-                            else:
-                                st.warning("時間が過ぎているため、即時投稿します")
-                                time.sleep(2)
-                        
-                        suc, msg = post_to_threads(acc, p['text'], p['image_file'])
-                        
-                        now_s = get_jst_time().strftime('%H:%M:%S')
-                        res_icon = "✅" if suc else "❌"
-                        log_msg = f"{res_icon} {now_s} [{acc['name']}] {msg}"
-                        st.session_state.logs.append(log_msg)
-                        log_area.code("\n".join(reversed(st.session_state.logs)))
-
-                    # === 完了後処理: 収納ボックスを空にする (重複投稿防止) ===
-                    st.session_state.storage = [] 
-                    save_json(STORAGE_FILE, st.session_state.storage)
-
-                    st.balloons()
-                    st.success("すべての自動化タスクが完了しました！待機リストはクリアされました。")
-                    time.sleep(3)
-                    st.rerun()
+        st.markdown("---")
+        
+        # === 完了＆自動化ボタン ===
+        if st.button("✅ 完了＆自動化スタート (即時実行)", type="primary"):
+            current_post = st.session_state.posts[0]
+            if not current_post['text'] and not current_post['image_file']:
+                st.error("本文または画像を入力してください")
+            else:
+                target_acc_idx = current_post['acc_idx']
+                
+                # 1. 重複防止: 同じアカウントの古い待機投稿を削除
+                st.session_state.storage = [p for p in st.session_state.storage if p['acc_idx'] != target_acc_idx]
+                
+                # 2. 新しい投稿を収納に追加
+                st.session_state.storage.append(current_post)
+                save_json(STORAGE_FILE, st.session_state.storage)
+                
+                # 3. 編集画面を即リセット
+                st.session_state.posts = [{"text": "", "image_file": None, "acc_idx": 0, "random": False, "time_range": (12, 15)}]
+                save_json(POSTS_FILE, st.session_state.posts)
+                
+                # 4. フラグを立ててリロード (画面切り替え)
+                st.session_state.is_running = True
+                st.rerun()
 
 # --- ③ 実行ログ ---
 with tab3:
