@@ -2,8 +2,9 @@ import streamlit as st
 import time
 import random
 import requests
+import json
+import os
 from datetime import datetime, timedelta, timezone
-import pandas as pd
 
 # --- ページ設定 ---
 st.set_page_config(page_title="Threads Auto Master Pro", layout="wide", page_icon="🤖")
@@ -25,10 +26,31 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- データの保存・読み込み機能 (アカウント消失防止) ---
+DATA_FILE = "accounts.json"
+
+def load_accounts_from_file():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+
+def save_accounts_to_file(accounts):
+    with open(DATA_FILE, 'w') as f:
+        json.dump(accounts, f)
+
 # --- セッション状態の初期化 ---
-if 'accounts' not in st.session_state: st.session_state.accounts = []
-if 'posts' not in st.session_state: st.session_state.posts = [] # 現在編集中の投稿
-if 'storage' not in st.session_state: st.session_state.storage = [] # 収納ボックス
+if 'accounts' not in st.session_state:
+    st.session_state.accounts = load_accounts_from_file() # ファイルから読み込み
+
+if 'posts' not in st.session_state:
+    # 最初は「1つ」だけ空の枠を用意する
+    st.session_state.posts = [{"text": "", "image_file": None, "acc_idx": 0, "random": False, "time_range": (12, 15)}]
+
+if 'storage' not in st.session_state: st.session_state.storage = []
 if 'logs' not in st.session_state: st.session_state.logs = []
 
 # --- 日本時間(JST)の取得関数 ---
@@ -80,6 +102,9 @@ def post_to_threads(account, text, image_obj=None):
             new_token = refresh_access_token(token)
             if new_token:
                 account['token'] = new_token
+                # トークン更新があったのでファイルも更新して保存
+                save_accounts_to_file(st.session_state.accounts)
+                
                 params['access_token'] = new_token
                 res = requests.post(url_container, data=params).json()
         
@@ -97,12 +122,21 @@ def post_to_threads(account, text, image_obj=None):
 # --- サイドバー ---
 with st.sidebar:
     st.title("🤖 システム制御")
-    # 日本時間で表示
     st.info(f"🇯🇵 現在時刻 (JST)\n{get_jst_time().strftime('%Y-%m-%d %H:%M:%S')}")
     st.markdown("---")
     if st.button("全トークン強制更新"):
-        c = sum(1 for acc in st.session_state.accounts if refresh_access_token(acc['token']))
-        st.success(f"{c}件更新完了")
+        c = 0
+        for acc in st.session_state.accounts:
+            new_t = refresh_access_token(acc['token'])
+            if new_t:
+                acc['token'] = new_t
+                c += 1
+        if c > 0:
+            save_accounts_to_file(st.session_state.accounts) # 更新後のトークンを保存
+            st.success(f"{c}件更新完了＆保存しました")
+        else:
+            st.warning("更新対象なし")
+            
     if st.button("ログクリア"): st.session_state.logs = []
 
 # --- メイン画面 ---
@@ -113,18 +147,32 @@ tab1, tab2, tab3 = st.tabs(["① アカウント設定", "② 投稿作成＆収
 # --- ① アカウント ---
 with tab1:
     st.header("アカウント設定")
+    st.info("※ここで入力したアカウントは自動保存され、更新ボタンを押しても消えません。")
+    
     with st.expander("➕ アカウント追加", expanded=True):
         c1, c2 = st.columns(2)
         nm = c1.text_input("名前", key="n_nm")
         uid = c2.text_input("User ID", key="n_id", type="password")
         sec = st.text_input("App Secret (任意)", key="n_sc", type="password")
         tok = st.text_input("Access Token", key="n_tk", type="password")
+        
         if st.button("保存"):
-            st.session_state.accounts.append({"name": nm, "id": uid, "token": tok, "secret": sec})
-            st.success(f"保存: {nm}")
+            if nm and uid and tok:
+                st.session_state.accounts.append({"name": nm, "id": uid, "token": tok, "secret": sec})
+                save_accounts_to_file(st.session_state.accounts) # ファイルに書き込み
+                st.success(f"保存しました: {nm}")
+            else:
+                st.error("必須項目を入力してください")
     
     if st.session_state.accounts:
-        for acc in st.session_state.accounts: st.write(f"✅ {acc['name']}")
+        st.markdown("### 連携中のアカウント")
+        for i, acc in enumerate(st.session_state.accounts):
+            c_info, c_del = st.columns([4, 1])
+            c_info.write(f"✅ **{acc['name']}** (ID: {acc['id'][:4]}...)")
+            if c_del.button("削除", key=f"del_acc_{i}"):
+                st.session_state.accounts.pop(i)
+                save_accounts_to_file(st.session_state.accounts) # 削除後も保存
+                st.rerun()
 
 # --- ② 投稿作成＆収納 ---
 with tab2:
@@ -145,7 +193,7 @@ with tab2:
     st.markdown("---")
     st.subheader("作業デスク (編集中の投稿)")
     
-    if st.button("➕ 新規投稿枠を作成"):
+    if st.button("➕ 新規投稿枠を追加"):
         st.session_state.posts.append({"text": "", "image_file": None, "acc_idx": 0, "random": False, "time_range": (12, 15)})
     
     if not st.session_state.accounts:
@@ -158,7 +206,9 @@ with tab2:
             st.markdown(f"""<div class="post-card"><h4>📝 編集中の投稿 #{i+1}</h4>""", unsafe_allow_html=True)
             c1, c2 = st.columns([1, 1])
             with c1:
-                post['acc_idx'] = acc_names.index(st.selectbox(f"アカウント #{i+1}", acc_names, key=f"s_{i}"))
+                # アカウント選択 (インデックスエラー防止)
+                if post['acc_idx'] >= len(acc_names): post['acc_idx'] = 0
+                post['acc_idx'] = acc_names.index(st.selectbox(f"アカウント #{i+1}", acc_names, index=post['acc_idx'], key=f"s_{i}"))
             with c2:
                 post['random'] = st.checkbox(f"ランダム時間 #{i+1}", value=post['random'], key=f"r_{i}")
                 if post['random']:
@@ -183,11 +233,12 @@ with tab2:
         if st.session_state.posts:
             st.markdown("---")
             if st.button("✅ 投稿作成完了 (収納ボックスへしまう)", type="primary"):
-                # 現在の編集内容をすべてstorageに移動して、postsを空にする
+                # 現在の編集内容をすべてstorageに移動
                 st.session_state.storage.extend(st.session_state.posts)
-                st.session_state.posts = [] # 作業デスクをクリア
+                # 投稿枠を完全に空にするのではなく、新しい1つの枠を用意する（ユーザビリティのため）
+                st.session_state.posts = [{"text": "", "image_file": None, "acc_idx": 0, "random": False, "time_range": (12, 15)}]
                 st.balloons()
-                st.success("全ての投稿を収納ボックスにしまいました！")
+                st.success("全ての投稿を収納ボックスにしまいました！新しい枠を用意しました。")
                 time.sleep(1)
                 st.rerun()
 
@@ -197,7 +248,7 @@ with tab3:
     st.write("収納ボックスに入っている投稿、または編集中の投稿すべてをスケジュール実行します。")
     
     # 実行対象を結合 (編集中のもの + 収納されているもの)
-    all_targets = st.session_state.posts + st.session_state.storage
+    all_targets = [p for p in st.session_state.posts if p['text'] or p['image_file']] + st.session_state.storage
     st.info(f"現在の待機中ポスト: {len(all_targets)}件")
     
     if st.button("🚀 自動化スタート"):
@@ -209,17 +260,14 @@ with tab3:
             
             for i, post in enumerate(all_targets):
                 acc = st.session_state.accounts[post['acc_idx']]
-                if not post['text'] and not post['image_file']: continue
                 
                 if post['random']:
                     s, e = post['time_range']
                     if s >= e: e = 24
-                    now = get_jst_time() # JSTで計算
+                    now = get_jst_time() 
                     
-                    # 今日の日付でターゲット時間を設定
                     target_h = random.randint(s, max(s, e-1))
                     target_m = random.randint(0, 59)
-                    # JSTのdatetimeオブジェクトを作成
                     target_time = now.replace(hour=target_h, minute=target_m, second=0)
                     
                     wait = (target_time - now).total_seconds()
