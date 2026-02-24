@@ -284,7 +284,7 @@ with tab2:
                     else:
                         st.warning(info_text)
                     
-                    # 【追加】画像があればプレビュー表示
+                    # 画像があればプレビュー表示
                     if p.get('image_file'):
                         st.image(p['image_file'], width=150)
                     
@@ -329,6 +329,10 @@ with tab2:
             
             c1, c2 = st.columns([1, 1])
             img_file = c1.file_uploader("画像 (変更する場合のみ)", type=['png','jpg'], key="form_file")
+            # 【追加】アップロードされたファイルのプレビューを表示
+            if img_file is not None:
+                c1.image(img_file, caption="選択中の画像", width=200)
+
             txt_content = c2.text_area("投稿本文", value=default_text, height=150, key="form_text")
             
             # ボタンのラベルと動作を切り替え
