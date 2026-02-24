@@ -184,7 +184,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # 【変更点】アカウントごとの個別スイッチをサイドバーに集約
+    # アカウントごとの個別スイッチをサイドバーに集約
     st.subheader("📡 アカウント別稼働設定")
     if st.session_state.accounts:
         for i, acc in enumerate(st.session_state.accounts):
@@ -283,6 +283,10 @@ with tab2:
                         st.info(f"✏️ 編集中の項目: {info_text}")
                     else:
                         st.warning(info_text)
+                    
+                    # 【追加】画像があればプレビュー表示
+                    if p.get('image_file'):
+                        st.image(p['image_file'], width=150)
                     
                     c_del, c_edit = st.columns([1, 1])
                     if c_del.button("🗑️ 削除", key=f"del_s_{original_idx}"):
