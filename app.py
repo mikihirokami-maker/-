@@ -184,7 +184,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # アカウントごとの個別スイッチをサイドバーに集約
+    # アカウントごとの個別スイッチ
     st.subheader("📡 アカウント別稼働設定")
     if st.session_state.accounts:
         for i, acc in enumerate(st.session_state.accounts):
@@ -284,10 +284,11 @@ with tab2:
                     else:
                         st.warning(info_text)
                     
-                    # 画像があればプレビュー表示
+                    # リスト内での画像プレビュー
                     if p.get('image_file'):
                         st.image(p['image_file'], width=150)
                     
+                    # ボタン群（削除・編集）
                     c_del, c_edit = st.columns([1, 1])
                     if c_del.button("🗑️ 削除", key=f"del_s_{original_idx}"):
                         st.session_state.storage.pop(original_idx)
@@ -309,7 +310,7 @@ with tab2:
         form_title = "✏️ 投稿を編集" if st.session_state.edit_target_idx is not None else "📝 新しい自動投稿を追加"
         st.subheader(form_title)
         
-        # 編集モードの場合、初期値をセット
+        # 初期値セット
         default_text = ""
         default_range = (12, 15)
         default_random = True
@@ -329,13 +330,13 @@ with tab2:
             
             c1, c2 = st.columns([1, 1])
             img_file = c1.file_uploader("画像 (変更する場合のみ)", type=['png','jpg'], key="form_file")
-            # 【追加】アップロードされたファイルのプレビューを表示
+            # アップロード時のプレビュー
             if img_file is not None:
                 c1.image(img_file, caption="選択中の画像", width=200)
 
             txt_content = c2.text_area("投稿本文", value=default_text, height=150, key="form_text")
             
-            # ボタンのラベルと動作を切り替え
+            # 保存・追加ボタン
             btn_label = "🔄 更新して保存" if st.session_state.edit_target_idx is not None else "✅ リストに追加 (毎日自動化)"
             
             if st.button(btn_label, type="primary"):
@@ -355,7 +356,7 @@ with tab2:
                             st.session_state.storage[idx]['image_file'] = img_file
                         
                         st.toast("設定を更新しました！")
-                        st.session_state.edit_target_idx = None # 編集モード終了
+                        st.session_state.edit_target_idx = None
                     else:
                         # 新規追加処理
                         new_entry = {
@@ -370,13 +371,13 @@ with tab2:
                     time.sleep(1)
                     st.rerun()
             
-            # 編集キャンセルのボタン
+            # キャンセルボタン
             if st.session_state.edit_target_idx is not None:
                 if st.button("キャンセル"):
                     st.session_state.edit_target_idx = None
                     st.rerun()
 
-# --- 自動実行ロジック (UIの下で常に回る) ---
+# --- 自動実行ロジック ---
 if is_running:
     if st.session_state.edit_target_idx is not None:
          st.sidebar.warning("⚠️ 編集作業中は一時停止を推奨します")
@@ -388,16 +389,13 @@ if is_running:
         if p['acc_idx'] >= len(st.session_state.accounts): continue
         acc = st.session_state.accounts[p['acc_idx']]
         
-        # 【重要】アカウントごとの個別スイッチがOFFならスキップ
         if not acc.get('active', True):
             continue
 
-        # next_run修復
         if 'next_run' not in p or not isinstance(p['next_run'], datetime):
             p['next_run'] = calculate_next_run(p['time_range'])
             save_json(STORAGE_FILE, st.session_state.storage)
         
-        # 時間チェック
         time_diff = (p['next_run'] - now).total_seconds()
         
         if time_diff <= 0:
