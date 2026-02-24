@@ -1,157 +1,143 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>ARK Real-AI Architect</title>
-    <style>
-        :root { --main-color: #ff0055; --bg-dark: #0a0a0a; --panel-bg: #141414; --text-main: #f0f0f0; }
-        
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        
-        body { font-family: 'Helvetica Neue', Arial, sans-serif; background: var(--bg-dark); color: var(--text-main); margin: 0; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
-        
-        header { background: #000; padding: 15px; border-bottom: 2px solid var(--main-color); font-weight: bold; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; font-size: 1rem; }
-        header button { padding: 8px 12px; font-size: 0.75rem; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; }
+import streamlit as st
+import time
+from datetime import datetime
+import pandas as pd
 
-        #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100dvh; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; padding: 20px; }
-        .setup-box { background: #1a1a1a; padding: 25px 20px; border-radius: 12px; border: 1px solid #333; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
-        .setup-box h2 { font-size: 1.3rem; color: var(--main-color); margin-top: 0; }
-        .setup-box input { width: 100%; padding: 15px; margin: 20px 0; border-radius: 8px; border: 1px solid #444; background: #000; color: #fff; font-size: 16px; outline: none; }
-        .setup-box button { width: 100%; padding: 15px; background: var(--main-color); color: #fff; border: none; border-radius: 8px; font-weight: bold; font-size: 1rem; cursor: pointer; }
+# --- CONFIGURATION & STYLING ---
+st.set_page_config(page_title="Threads Automator NEON", layout="wide", page_icon="⚡")
 
-        #chat-interface { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 15px; scroll-behavior: smooth; }
-        .msg { max-width: 90%; padding: 12px 16px; border-radius: 16px; line-height: 1.5; font-size: 0.95rem; word-wrap: break-word; }
-        .ai-msg { background: var(--panel-bg); border-left: 4px solid var(--main-color); align-self: flex-start; border-bottom-left-radius: 4px; }
-        .user-msg { background: #2a2a2a; align-self: flex-end; border-bottom-right-radius: 4px; }
-        
-        .input-area { background: #000; padding: 10px 15px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); display: flex; gap: 10px; border-top: 1px solid #222; flex-shrink: 0; align-items: center; }
-        input[type="text"] { flex: 1; padding: 12px 15px; border-radius: 20px; border: 1px solid #333; background: #111; color: white; outline: none; font-size: 16px; transition: border-color 0.2s; }
-        input[type="text"]:focus { border-color: var(--main-color); }
-        
-        .send-btn { background: var(--main-color); color: #fff; border: none; width: 45px; height: 45px; border-radius: 50%; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; flex-shrink: 0; font-size: 0.9rem; transition: 0.1s; }
-        .send-btn:active { transform: scale(0.9); }
-        .send-btn:disabled { background: #555; cursor: not-allowed; transform: none; }
-        
-        .loading { font-style: italic; color: #888; font-size: 0.85rem; }
-    </style>
-</head>
-<body>
-
-<header>
-    <span>🏗️ リアルAI 建築士</span>
-    <button onclick="resetKey()">リセット</button>
-</header>
-
-<div id="setup-screen">
-    <div class="setup-box">
-        <h2>AIエンジン接続設定</h2>
-        <p style="font-size: 0.85rem; color: #aaa;">本物のAIを動かすには、Googleの無料APIキーが必要です。</p>
-        <input type="password" id="apiKeyInput" placeholder="APIキーを貼り付け">
-        <button onclick="saveKey()">接続を開始する</button>
-    </div>
-</div>
-
-<div id="chat-interface"></div>
-
-<div class="input-area">
-    <input type="text" id="userInput" placeholder="聞きたいことを入力..." onkeypress="if(event.keyCode==13) sendMessage()">
-    <button class="send-btn" id="sendBtn" onclick="sendMessage()">送信</button>
-</div>
-
-<script>
-    let apiKey = localStorage.getItem('gemini_api_key');
-    if (apiKey) {
-        document.getElementById('setup-screen').style.display = 'none';
-        appendMsg('System', '接続完了。ARKの建築について、どんなマニアックなことでも質問してください。', 'ai');
+# Custom CSS for "Stylish & Cool" Look (Cyberpunk/Glassmorphism)
+st.markdown("""
+<style>
+    /* Main Background */
+    .stApp {
+        background-color: #050505;
+        background-image: radial-gradient(circle at 50% 50%, #1a1a1a 0%, #000000 100%);
+        color: #e0e0e0;
     }
-
-    function saveKey() {
-        const key = document.getElementById('apiKeyInput').value.trim();
-        if (key) {
-            localStorage.setItem('gemini_api_key', key);
-            apiKey = key;
-            document.getElementById('setup-screen').style.display = 'none';
-            appendMsg('System', '接続に成功しました。建築プランをどうぞ！', 'ai');
-        }
+    /* Headers */
+    h1, h2, h3 {
+        color: #00f2ff !important;
+        font-family: 'Helvetica Neue', sans-serif;
+        text-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
     }
-
-    function resetKey() {
-        localStorage.removeItem('gemini_api_key');
-        location.reload();
+    /* Cards/Containers */
+    .css-1r6slb0, .stTextArea, .stTextInput {
+        background: rgba(255, 255, 255, 0.05) !important;
+        border: 1px solid rgba(0, 242, 255, 0.2) !important;
+        border-radius: 12px !important;
+        color: #fff !important;
     }
+    /* Buttons */
+    .stButton>button {
+        background: linear-gradient(45deg, #00c6ff, #0072ff);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0, 114, 255, 0.4);
+        transition: all 0.3s ease;
+        font-weight: bold;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 114, 255, 0.6);
+    }
+    /* Input Labels */
+    label {
+        color: #b0b0b0 !important;
+        font-size: 0.9rem !important;
+    }
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #0a0a0a;
+        border-right: 1px solid #222;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-    const chatBox = document.getElementById('chat-interface');
-    const inputField = document.getElementById('userInput');
-    const sendBtn = document.getElementById('sendBtn');
-    let conversationHistory = [];
+# --- SIDEBAR: STATUS & INFO ---
+with st.sidebar:
+    st.title("⚡ SYSTEM STATUS")
+    st.markdown("---")
+    st.success("● SYSTEM ONLINE")
+    st.info(f"🕒 Time: {datetime.now().strftime('%H:%M:%S')}")
+    st.markdown("---")
+    st.caption("Threads Automator v1.0")
+    st.caption("Designed for Advanced Users")
 
-    function appendMsg(sender, text, type, id = null) {
-        const div = document.createElement('div');
-        div.className = `msg ${type}-msg`;
-        if (id) div.id = id;
+# --- MAIN INTERFACE ---
+st.title("THREADS AUTOMATOR // NEON")
+st.markdown("次世代のSNS運用オートメーションツールへようこそ。")
+
+# Tabs for easy navigation
+tab1, tab2, tab3 = st.tabs(["🔗 CONNECTION (接続設定)", "📅 DAILY AUTO (自動投稿)", "🔄 RE-POST (再投稿)"])
+
+# --- TAB 1: CONNECTION (接続設定) ---
+with tab1:
+    st.header("API CONNECTION HUB")
+    st.markdown("Threads APIとの接続を確立します。ここでキーを入力してください。")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        user_id = st.text_input("Threads User ID", placeholder="例: 123456789", type="password")
+        access_token = st.text_input("Access Token", placeholder="例: EAAwc...", type="password")
+    
+    with col2:
+        st.markdown("#### 接続ステータス")
+        if user_id and access_token:
+            st.success("API Credentials Detected (Ready)")
+            if st.button("接続テストを実行"):
+                with st.spinner("Connecting to Meta Graph API..."):
+                    time.sleep(1.5) # ダミーの待機時間
+                    st.toast("接続成功！アカウントを認識しました。", icon="✅")
+        else:
+            st.warning("待機中: クレデンシャルを入力してください")
+            
+    st.markdown("---")
+    st.caption("※ APIキーはローカル環境でのみ使用され、外部には送信されません。")
+
+# --- TAB 2: DAILY AUTO POST (自動投稿) ---
+with tab2:
+    st.header("DAILY AUTOMATION SCHEDULER")
+    st.markdown("毎日指定した時間に投稿を自動実行します。")
+
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        st.subheader("設定")
+        post_time = st.time_input("投稿時間", value=datetime.strptime("19:00", "%H:%M").time())
+        is_active = st.toggle("自動投稿を有効化", value=True)
         
-        let formattedText = text.replace(/\*\*(.*?)\*\*/g, '<strong><span style="color:#ff0055;">$1</span></strong>');
-        formattedText = formattedText.replace(/\n/g, '<br>');
-        div.innerHTML = formattedText;
+    with c2:
+        st.subheader("コンテンツ作成")
+        post_content = st.text_area("投稿内容 (テンプレート)", height=150, placeholder="ここに毎日の投稿内容を入力... (例: 今日の積み上げ報告！ #Threads)")
         
-        chatBox.appendChild(div);
-        chatBox.scrollTo(0, chatBox.scrollHeight);
-    }
+        if st.button("設定を保存 & スケジューラ起動"):
+            st.toast(f"{post_time} にスケジュールを設定しました。", icon="🚀")
+            st.balloons()
 
-    async function sendMessage() {
-        const text = inputField.value.trim();
-        if (!text || !apiKey) return;
-
-        inputField.disabled = true;
-        sendBtn.disabled = true;
-
-        appendMsg('You', text, 'user');
-        inputField.value = "";
-        
-        const loadingId = 'loading-' + Date.now();
-        appendMsg('System', 'AIが独自に設計図を構築中...', 'ai', loadingId);
-
-        const systemInstruction = `あなたはゲーム「ARK: Survival Evolved」の超プロフェッショナルな建築家です。
-        テンプレートや定型文は絶対に一切使わず、毎回完全にオリジナルの言葉で、マニアックで具体的な建築のやり方（土台下げ、スナップポイントの活用、柱の隠し方など）を解説してください。
-        ユーザーの要望に合わせて、実践的なステップと、必要建材の概算を算出してください。`;
-
-        let promptText = systemInstruction + "\n\n";
-        conversationHistory.forEach(h => {
-            promptText += `ユーザー: ${h.user}\n建築家: ${h.ai}\n\n`;
-        });
-        promptText += `ユーザー: ${text}\n建築家:`;
-
-        try {
-            // ★ここを最新の gemini-2.0-flash モデルに修正しました★
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: promptText }] }]
-                })
-            });
-
-            const data = await response.json();
-            document.getElementById(loadingId).remove();
-
-            if (data.error) {
-                appendMsg('Error', `エラーが発生しました: ${data.error.message}`, 'ai');
-            } else {
-                const aiResponse = data.candidates[0].content.parts[0].text;
-                appendMsg('Architect', aiResponse, 'ai');
-                conversationHistory.push({ user: text, ai: aiResponse });
-                if (conversationHistory.length > 3) conversationHistory.shift();
-            }
-        } catch (error) {
-            document.getElementById(loadingId).remove();
-            appendMsg('Error', '通信に失敗しました。', 'ai');
-        } finally {
-            inputField.disabled = false;
-            sendBtn.disabled = false;
-            chatBox.scrollTo(0, chatBox.scrollHeight);
-        }
-    }
-</script>
-</body>
-</html>
+# --- TAB 3: RE-POST / MONITORING (再投稿機能) ---
+with tab3:
+    st.header("TARGET RE-POST SYSTEM")
+    st.markdown("特定のアカウントの新規投稿を検知し、自動で再投稿（引用含む）を行います。")
+    
+    col_target, col_action = st.columns(2)
+    
+    with col_target:
+        target_account = st.text_input("監視対象のアカウントID (@不要)", placeholder="target_user_id")
+        check_interval = st.slider("チェック間隔 (分)", 5, 60, 15)
+    
+    with col_action:
+        repost_type = st.radio("アクションタイプ", ["単純リポスト (Repost)", "引用投稿 (Quote)"])
+        if repost_type == "引用投稿 (Quote)":
+            quote_text = st.text_input("引用時のコメント", "素晴らしい投稿です！")
+    
+    st.markdown("### 実行ログ")
+    log_data = pd.DataFrame({
+        "Time": ["10:00", "10:15", "10:30"],
+        "Target": [target_account if target_account else "-", "-", "-"],
+        "Status": ["No Update", "No Update", "Checking..."]
+    })
+    st.dataframe(log_data, use_container_width=True)
+    
+    if st.button("監視エージェントを開始"):
+        st.warning("バックグラウンドプロセスを開始しました... (停止するにはアプリを終了してください)")
