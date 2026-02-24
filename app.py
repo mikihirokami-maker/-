@@ -174,15 +174,36 @@ st.title("THREADS AUTO MASTER ♾️")
 
 # サイドバー設定
 with st.sidebar:
-    st.title("🤖 システム制御")
+    st.title("🤖 コントロールパネル")
     st.info(f"🇯🇵 {get_jst_time().strftime('%Y-%m-%d %H:%M:%S')}")
     
-    # マスター稼働スイッチ
-    is_running = st.toggle("🤖 システム全体稼働", value=False)
+    # メインエンジン（ループ処理用）
+    is_running = st.toggle("🔄 モニタリング機能 (ON/OFF)", value=False)
+    if is_running:
+        st.caption("※モニタリング中も以下のスイッチで個別制御可能です")
+    
+    st.markdown("---")
+    
+    # 【変更点】アカウントごとの個別スイッチをサイドバーに集約
+    st.subheader("📡 アカウント別稼働設定")
+    if st.session_state.accounts:
+        for i, acc in enumerate(st.session_state.accounts):
+            # サイドバーで直接ON/OFFを切り替える
+            is_on = st.toggle(f"{acc['name']}", value=acc.get('active', True), key=f"side_acc_{i}")
+            
+            # 状態が変わったら保存
+            if is_on != acc.get('active', True):
+                acc['active'] = is_on
+                save_json(ACCOUNTS_FILE, st.session_state.accounts)
+                st.rerun()
+    else:
+        st.caption("アカウントが登録されていません")
+
+    st.markdown("---")
     
     if st.button("ログクリア"): st.session_state.logs = []
     
-    # ログ表示エリア（サイドバーに常設）
+    # ログ表示エリア
     st.markdown("### 📜 実行ログ")
     log_area = st.empty()
     if st.session_state.logs:
@@ -208,7 +229,7 @@ with tab1:
                         "id": info.get('id'), 
                         "token": new_token, 
                         "secret": new_secret,
-                        "active": True # デフォルトで有効
+                        "active": True
                     })
                     save_json(ACCOUNTS_FILE, st.session_state.accounts)
                     st.success(f"追加: {info.get('name')}")
@@ -220,19 +241,12 @@ with tab1:
         st.write("### 登録済みアカウント一覧")
         for i, acc in enumerate(st.session_state.accounts):
             with st.container():
-                c1, c2, c3 = st.columns([0.5, 3, 1])
-                # 個別アカウントの稼働スイッチ
-                is_active = c1.toggle("", value=acc.get('active', True), key=f"active_{i}")
-                # 状態更新
-                if is_active != acc.get('active', True):
-                    acc['active'] = is_active
-                    save_json(ACCOUNTS_FILE, st.session_state.accounts)
-                    st.rerun()
+                c1, c2 = st.columns([4, 1])
+                # サイドバーで制御するため、ここは状態表示のみにする
+                status_text = "🟢 稼働中" if acc.get('active', True) else "⚪ 停止中"
+                c1.write(f"**{acc['name']}** - {status_text}")
                 
-                status_icon = "🟢" if is_active else "⚪"
-                c2.write(f"{status_icon} **{acc['name']}**")
-                
-                if c3.button("削除", key=f"del_acc_{i}"):
+                if c2.button("削除", key=f"del_acc_{i}"):
                     st.session_state.accounts.pop(i)
                     save_json(ACCOUNTS_FILE, st.session_state.accounts)
                     st.rerun()
@@ -356,9 +370,8 @@ with tab2:
 
 # --- 自動実行ロジック (UIの下で常に回る) ---
 if is_running:
-    # 稼働中であることを通知
     if st.session_state.edit_target_idx is not None:
-         st.sidebar.warning("⚠️ 編集作業中は一時停止を推奨します（画面更新で入力が消える可能性があります）")
+         st.sidebar.warning("⚠️ 編集作業中は一時停止を推奨します")
     
     now = get_jst_time()
     run_triggered = False
@@ -367,7 +380,7 @@ if is_running:
         if p['acc_idx'] >= len(st.session_state.accounts): continue
         acc = st.session_state.accounts[p['acc_idx']]
         
-        # アカウントごとの個別スイッチを確認 (デフォルトTrue)
+        # 【重要】アカウントごとの個別スイッチがOFFならスキップ
         if not acc.get('active', True):
             continue
 
@@ -391,7 +404,5 @@ if is_running:
             st.toast(f"🚀 {acc['name']} に投稿しました！")
             run_triggered = True
 
-    # ボット稼働中は定期的に画面を更新して時間をチェックする
-    # ※編集モードでないとき、または何も操作がないときにリフレッシュ
-    time.sleep(10) # 10秒ごとのチェックに緩和（入力阻害軽減のため）
+    time.sleep(10)
     st.rerun()
