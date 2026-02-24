@@ -188,7 +188,6 @@ with tab2:
             st.info("待機中の投稿はありません")
         else:
             for i, p in enumerate(st.session_state.storage):
-                # アカウント名を取得して表示
                 acc_name = "不明"
                 if 0 <= p['acc_idx'] < len(st.session_state.accounts):
                     acc_name = st.session_state.accounts[p['acc_idx']]['name']
@@ -197,8 +196,8 @@ with tab2:
                 
                 c_res, c_del = st.columns([1, 1])
                 if c_res.button(f"↩️ 修正する", key=f"res_{i}"):
-                    st.session_state.posts = [p] # 編集画面に戻す
-                    st.session_state.storage.pop(i) # 収納から消す
+                    st.session_state.posts = [p] 
+                    st.session_state.storage.pop(i) 
                     save_json(POSTS_FILE, st.session_state.posts)
                     save_json(STORAGE_FILE, st.session_state.storage)
                     st.rerun()
@@ -210,7 +209,7 @@ with tab2:
     st.markdown("---")
     st.subheader("📝 新規作成 / 編集")
     
-    # 編集エリア（プレースホルダーを使って後で消去可能にする）
+    # 編集エリア
     editor_placeholder = st.empty()
     
     with editor_placeholder.container():
@@ -218,8 +217,6 @@ with tab2:
             st.warning("先にアカウントを追加してください")
         else:
             acc_names = [a['name'] for a in st.session_state.accounts]
-            
-            # 編集枠 (現在は1つのみ表示)
             post = st.session_state.posts[0]
             
             st.markdown(f"""<div class="post-card">""", unsafe_allow_html=True)
@@ -243,84 +240,77 @@ with tab2:
                 post['text'] = st.text_area(f"投稿本文", value=post['text'], height=100, key=f"t_0")
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # JSON保存 (入力途中も保存)
             save_json(POSTS_FILE, st.session_state.posts)
 
             st.markdown("---")
             
             # === 完了＆自動化ボタン ===
             if st.button("✅ 完了＆自動化スタート (即時実行)", type="primary"):
-                # 1. バリデーション
                 current_post = st.session_state.posts[0]
                 if not current_post['text'] and not current_post['image_file']:
                     st.error("本文または画像を入力してください")
                 else:
                     target_acc_idx = current_post['acc_idx']
                     
-                    # 2. [1垢1枠ルール] 収納ボックスから、同じアカウントの古い投稿を削除
+                    # 1. 重複防止: 同じアカウントの古い待機投稿を削除
                     st.session_state.storage = [p for p in st.session_state.storage if p['acc_idx'] != target_acc_idx]
                     
-                    # 3. 新しい投稿を収納に追加
+                    # 2. 新しい投稿を収納に追加
                     st.session_state.storage.append(current_post)
                     save_json(STORAGE_FILE, st.session_state.storage)
                     
-                    # 4. 編集画面を「白紙」にリセット (次回の表示用)
+                    # 3. 編集画面を「白紙」に即リセット
                     st.session_state.posts = [{"text": "", "image_file": None, "acc_idx": 0, "random": False, "time_range": (12, 15)}]
                     save_json(POSTS_FILE, st.session_state.posts)
                     
-                    # 5. ★UIを消去して自動化モードへ突入★
-                    editor_placeholder.empty() # 編集画面を消す
+                    # 4. UIを消去して自動化モードへ
+                    editor_placeholder.empty() 
                     
                     st.success(f"投稿を受け付けました！自動化プロセスを開始します...")
-                    st.toast("自動化モード起動中... ブラウザを閉じないでください", icon="🚀")
+                    st.toast("自動化モード起動中...", icon="🚀")
                     
-                    # ログ表示用エリア
                     log_area = st.empty()
                     
-                    # === 自動化ループ実行 (収納ボックスの中身を全て処理) ===
-                    # ここで実行することで、ボタンを押した直後に待機・投稿が始まります
-                    for i, p in enumerate(st.session_state.storage):
-                        # アカウント情報取得
+                    # === 自動化ループ実行 ===
+                    # 実行リストの作成（ループ中の削除によるエラー防止のためコピーを使用）
+                    execution_list = list(st.session_state.storage)
+                    
+                    for i, p in enumerate(execution_list):
                         if p['acc_idx'] >= len(st.session_state.accounts): continue
                         acc = st.session_state.accounts[p['acc_idx']]
                         
                         st.info(f"▶ 処理中: {acc['name']} の投稿...")
                         
-                        # ランダム待機ロジック
                         if p['random']:
                             s, e = p['time_range']
                             if s >= e: e = 24
                             now = get_jst_time()
-                            
                             target_h = random.randint(s, max(s, e-1))
                             target_m = random.randint(0, 59)
                             target_time = now.replace(hour=target_h, minute=target_m, second=0)
-                            
                             wait = (target_time - now).total_seconds()
                             
                             if wait > 0:
                                 st.warning(f"⏳ 待機モード: {target_h}:{target_m} に投稿します ({int(wait)}秒待機中...)")
-                                # 待機
                                 time.sleep(wait)
                             else:
                                 st.warning("時間が過ぎているため、即時投稿します")
                                 time.sleep(2)
                         
-                        # 投稿実行
                         suc, msg = post_to_threads(acc, p['text'], p['image_file'])
                         
-                        # ログ記録
                         now_s = get_jst_time().strftime('%H:%M:%S')
                         res_icon = "✅" if suc else "❌"
                         log_msg = f"{res_icon} {now_s} [{acc['name']}] {msg}"
                         st.session_state.logs.append(log_msg)
-                        
-                        # リアルタイムログ更新
                         log_area.code("\n".join(reversed(st.session_state.logs)))
-                    
+
+                    # === 完了後処理: 収納ボックスを空にする (重複投稿防止) ===
+                    st.session_state.storage = [] 
+                    save_json(STORAGE_FILE, st.session_state.storage)
+
                     st.balloons()
-                    st.success("すべての自動化タスクが完了しました！")
-                    # 処理が終わったらリロードして初期状態(白紙)に戻す
+                    st.success("すべての自動化タスクが完了しました！待機リストはクリアされました。")
                     time.sleep(3)
                     st.rerun()
 
