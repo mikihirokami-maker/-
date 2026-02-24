@@ -44,8 +44,9 @@ def save_json(file_path, data):
     serializable_data = []
     for item in data:
         item_copy = item.copy()
-        if 'image_file' in item_copy:
-            del item_copy['image_file']
+        # 画像ファイルオブジェクトではなくURL文字列なのでそのまま保存可能
+        # if 'image_file' in item_copy:
+        #     del item_copy['image_file'] 
         if 'next_run' in item_copy and isinstance(item_copy['next_run'], datetime):
             item_copy['next_run'] = item_copy['next_run'].isoformat()
         serializable_data.append(item_copy)
@@ -58,7 +59,7 @@ if 'accounts' not in st.session_state: st.session_state.accounts = load_json(ACC
 if 'storage' not in st.session_state:
     loaded_st = load_json(STORAGE_FILE)
     for p in loaded_st: 
-        p['image_file'] = None
+        # URL管理に変更したため、ここでのクリア処理は不要（文字列としてロードする）
         if 'next_run' in p and p['next_run']:
             try:
                 p['next_run'] = datetime.fromisoformat(p['next_run'])
@@ -117,32 +118,21 @@ def refresh_access_token(token):
         return res.get('access_token')
     except: return None
 
-def upload_image_to_imgur(image_file):
-    CLIENT_ID = "d3a6697416345f7" 
-    url = "https://api.imgur.com/3/image"
-    headers = {"Authorization": f"Client-ID {CLIENT_ID}"}
-    try:
-        image_data = image_file.getvalue()
-        payload = {"image": image_data}
-        response = requests.post(url, headers=headers, files=payload)
-        data = response.json()
-        return data['data']['link'] if data['success'] else None
-    except: return None
+# URLをそのまま使うためImgurアップロード関数は不要だが、互換性のため残すか削除
+# 今回はURLを直接使うのでこの関数は使用しません
 
-def post_to_threads(account, text, image_obj=None):
+def post_to_threads(account, text, image_url_str=None):
     user_id = account['id']
     token = account['token']
-    image_url = None
     
-    if image_obj is not None:
-        try:
-            image_url = upload_image_to_imgur(image_obj)
-        except:
-            return False, "画像の再アップロードに失敗(セッション切れ)"
+    # ここで image_url_str が有効なURLかチェック
+    final_image_url = None
+    if image_url_str and image_url_str.startswith("http"):
+        final_image_url = image_url_str
     
     url_container = f"https://graph.threads.net/v1.0/{user_id}/threads"
-    params = {'access_token': token, 'media_type': 'IMAGE' if image_url else 'TEXT'}
-    if image_url: params['image_url'] = image_url
+    params = {'access_token': token, 'media_type': 'IMAGE' if final_image_url else 'TEXT'}
+    if final_image_url: params['image_url'] = final_image_url
     params['text'] = text
 
     try:
@@ -158,7 +148,7 @@ def post_to_threads(account, text, image_obj=None):
         if 'id' not in res: return False, f"エラー: {res}"
         
         creation_id = res['id']
-        if image_url: time.sleep(10)
+        if final_image_url: time.sleep(10)
         else: time.sleep(2)
         
         url_publish = f"https://graph.threads.net/v1.0/{user_id}/threads_publish"
@@ -184,14 +174,11 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # アカウントごとの個別スイッチをサイドバーに集約
+    # アカウントごとの個別スイッチ
     st.subheader("📡 アカウント別稼働設定")
     if st.session_state.accounts:
         for i, acc in enumerate(st.session_state.accounts):
-            # サイドバーで直接ON/OFFを切り替える
             is_on = st.toggle(f"{acc['name']}", value=acc.get('active', True), key=f"side_acc_{i}")
-            
-            # 状態が変わったら保存
             if is_on != acc.get('active', True):
                 acc['active'] = is_on
                 save_json(ACCOUNTS_FILE, st.session_state.accounts)
@@ -203,7 +190,6 @@ with st.sidebar:
     
     if st.button("ログクリア"): st.session_state.logs = []
     
-    # ログ表示エリア
     st.markdown("### 📜 実行ログ")
     log_area = st.empty()
     if st.session_state.logs:
@@ -242,7 +228,6 @@ with tab1:
         for i, acc in enumerate(st.session_state.accounts):
             with st.container():
                 c1, c2 = st.columns([4, 1])
-                # サイドバーで制御するため、ここは状態表示のみにする
                 status_text = "🟢 稼働中" if acc.get('active', True) else "⚪ 停止中"
                 c1.write(f"**{acc['name']}** - {status_text}")
                 
@@ -278,15 +263,14 @@ with tab2:
                     if 'next_run' in p and p['next_run']:
                         info_text += f" | 🕒 次回: {p['next_run'].strftime('%m/%d %H:%M')}"
                     
-                    # 編集中のハイライト
                     if st.session_state.edit_target_idx == original_idx:
                         st.info(f"✏️ 編集中の項目: {info_text}")
                     else:
                         st.warning(info_text)
                     
-                    # 画像があればプレビュー表示
-                    if p.get('image_file'):
-                        st.image(p['image_file'], width=150)
+                    # 画像URLがあればプレビュー表示
+                    if p.get('image_url'):
+                        st.image(p['image_url'], width=150)
                     
                     c_del, c_edit = st.columns([1, 1])
                     if c_del.button("🗑️ 削除", key=f"del_s_{original_idx}"):
@@ -309,16 +293,17 @@ with tab2:
         form_title = "✏️ 投稿を編集" if st.session_state.edit_target_idx is not None else "📝 新しい自動投稿を追加"
         st.subheader(form_title)
         
-        # 編集モードの場合、初期値をセット
         default_text = ""
         default_range = (12, 15)
         default_random = True
+        default_image_url = ""
         
         if st.session_state.edit_target_idx is not None and st.session_state.edit_target_idx < len(st.session_state.storage):
             target_data = st.session_state.storage[st.session_state.edit_target_idx]
             default_text = target_data.get('text', "")
             default_range = target_data.get('time_range', (12, 15))
             default_random = target_data.get('random', True)
+            default_image_url = target_data.get('image_url', "")
 
         with st.container():
             chk_random = st.checkbox("⏰ ランダム時間を有効化", value=default_random, key="form_random")
@@ -328,18 +313,22 @@ with tab2:
                 st.caption(f"※毎日 {time_range[0]}:00 〜 {time_range[1]}:00 の間で1回投稿します")
             
             c1, c2 = st.columns([1, 1])
-            img_file = c1.file_uploader("画像 (変更する場合のみ)", type=['png','jpg'], key="form_file")
-            # 【追加】アップロードされたファイルのプレビューを表示
-            if img_file is not None:
-                c1.image(img_file, caption="選択中の画像", width=200)
+            # 【変更点】ファイルアップローダーをテキスト入力（URL）に変更
+            image_url_input = c1.text_input("画像URL (https://...)", value=default_image_url, key="form_url")
+            
+            # 画像URLが入力されていればプレビューを表示
+            if image_url_input:
+                try:
+                    c1.image(image_url_input, caption="画像プレビュー", width=200)
+                except:
+                    c1.error("画像を表示できません")
 
             txt_content = c2.text_area("投稿本文", value=default_text, height=150, key="form_text")
             
-            # ボタンのラベルと動作を切り替え
             btn_label = "🔄 更新して保存" if st.session_state.edit_target_idx is not None else "✅ リストに追加 (毎日自動化)"
             
             if st.button(btn_label, type="primary"):
-                if not txt_content and not img_file and (st.session_state.edit_target_idx is None or not st.session_state.storage[st.session_state.edit_target_idx].get('image_file')):
+                if not txt_content and not image_url_input:
                     st.error("内容が空です")
                 else:
                     new_next_run = calculate_next_run(time_range)
@@ -351,16 +340,18 @@ with tab2:
                         st.session_state.storage[idx]['random'] = chk_random
                         st.session_state.storage[idx]['time_range'] = time_range
                         st.session_state.storage[idx]['next_run'] = new_next_run
-                        if img_file: # 画像がアップされた場合のみ更新
-                            st.session_state.storage[idx]['image_file'] = img_file
+                        st.session_state.storage[idx]['image_url'] = image_url_input # URLを保存
                         
                         st.toast("設定を更新しました！")
-                        st.session_state.edit_target_idx = None # 編集モード終了
+                        st.session_state.edit_target_idx = None
                     else:
                         # 新規追加処理
                         new_entry = {
-                            "text": txt_content, "image_file": img_file, "acc_idx": selected_acc_idx,
-                            "random": chk_random, "time_range": time_range,
+                            "text": txt_content, 
+                            "image_url": image_url_input, # URLを保存
+                            "acc_idx": selected_acc_idx,
+                            "random": chk_random, 
+                            "time_range": time_range,
                             "next_run": new_next_run
                         }
                         st.session_state.storage.append(new_entry)
@@ -370,13 +361,12 @@ with tab2:
                     time.sleep(1)
                     st.rerun()
             
-            # 編集キャンセルのボタン
             if st.session_state.edit_target_idx is not None:
                 if st.button("キャンセル"):
                     st.session_state.edit_target_idx = None
                     st.rerun()
 
-# --- 自動実行ロジック (UIの下で常に回る) ---
+# --- 自動実行ロジック ---
 if is_running:
     if st.session_state.edit_target_idx is not None:
          st.sidebar.warning("⚠️ 編集作業中は一時停止を推奨します")
@@ -388,20 +378,18 @@ if is_running:
         if p['acc_idx'] >= len(st.session_state.accounts): continue
         acc = st.session_state.accounts[p['acc_idx']]
         
-        # 【重要】アカウントごとの個別スイッチがOFFならスキップ
         if not acc.get('active', True):
             continue
 
-        # next_run修復
         if 'next_run' not in p or not isinstance(p['next_run'], datetime):
             p['next_run'] = calculate_next_run(p['time_range'])
             save_json(STORAGE_FILE, st.session_state.storage)
         
-        # 時間チェック
         time_diff = (p['next_run'] - now).total_seconds()
         
         if time_diff <= 0:
-            suc, msg = post_to_threads(acc, p['text'], p['image_file'])
+            # 投稿関数にURLを渡すように変更
+            suc, msg = post_to_threads(acc, p['text'], p.get('image_url'))
             now_s = now.strftime('%H:%M:%S')
             res_icon = "✅" if suc else "❌"
             log_entry = f"{res_icon} {now_s} [{acc['name']}] {msg}"
