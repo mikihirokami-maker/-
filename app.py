@@ -26,7 +26,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- データの保存・読み込み機能 (アカウント・投稿・収納の消失防止) ---
+# --- データの保存・読み込み機能 ---
 ACCOUNTS_FILE = "accounts.json"
 POSTS_FILE = "posts.json"
 STORAGE_FILE = "storage.json"
@@ -41,46 +41,38 @@ def load_json(file_path):
     return []
 
 def save_json(file_path, data):
-    # 画像ファイル(UploadedFile)はJSONに保存できないため除外して保存する
     serializable_data = []
     for item in data:
         item_copy = item.copy()
         if 'image_file' in item_copy:
-            del item_copy['image_file'] # 保存時は画像オブジェクトを削除
+            del item_copy['image_file'] 
         serializable_data.append(item_copy)
     
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(serializable_data, f, ensure_ascii=False, indent=2)
 
-# --- セッション状態の初期化 ---
-if 'accounts' not in st.session_state:
-    st.session_state.accounts = load_json(ACCOUNTS_FILE)
-
+# --- セッション初期化 ---
+if 'accounts' not in st.session_state: st.session_state.accounts = load_json(ACCOUNTS_FILE)
 if 'posts' not in st.session_state:
-    loaded_posts = load_json(POSTS_FILE)
-    if not loaded_posts:
-        # 初回またはデータなしの場合は空の枠を1つ作成
-        st.session_state.posts = [{"text": "", "image_file": None, "acc_idx": 0, "random": False, "time_range": (12, 15)}]
+    loaded = load_json(POSTS_FILE)
+    if loaded:
+        for p in loaded: p['image_file'] = None
+        st.session_state.posts = loaded
     else:
-        # JSONから読み込んだ場合、image_fileキーがないのでNoneで補完
-        for p in loaded_posts:
-            p['image_file'] = None
-        st.session_state.posts = loaded_posts
+        st.session_state.posts = [{"text": "", "image_file": None, "acc_idx": 0, "random": False, "time_range": (12, 15)}]
 
 if 'storage' not in st.session_state:
-    loaded_storage = load_json(STORAGE_FILE)
-    for p in loaded_storage:
-        p['image_file'] = None
-    st.session_state.storage = loaded_storage
+    loaded_st = load_json(STORAGE_FILE)
+    for p in loaded_st: p['image_file'] = None
+    st.session_state.storage = loaded_st
 
 if 'logs' not in st.session_state: st.session_state.logs = []
 
-# --- 日本時間(JST)の取得関数 ---
+# --- ユーティリティ関数 ---
 def get_jst_time():
     JST = timezone(timedelta(hours=9))
     return datetime.now(JST)
 
-# --- API関数 ---
 def refresh_access_token(token):
     url = "https://graph.threads.net/refresh_access_token"
     params = {'grant_type': 'th_refresh_token', 'access_token': token}
@@ -124,7 +116,7 @@ def post_to_threads(account, text, image_obj=None):
             new_token = refresh_access_token(token)
             if new_token:
                 account['token'] = new_token
-                save_json(ACCOUNTS_FILE, st.session_state.accounts) # トークン更新時に保存
+                save_json(ACCOUNTS_FILE, st.session_state.accounts)
                 params['access_token'] = new_token
                 res = requests.post(url_container, data=params).json()
         
@@ -153,172 +145,189 @@ with st.sidebar:
                 c += 1
         if c > 0:
             save_json(ACCOUNTS_FILE, st.session_state.accounts)
-            st.success(f"{c}件更新完了＆保存しました")
-        else:
-            st.warning("更新対象なし")
-            
+            st.success(f"{c}件更新完了")
     if st.button("ログクリア"): st.session_state.logs = []
 
 # --- メイン画面 ---
 st.title("THREADS AUTO MASTER ♾️")
 
-tab1, tab2, tab3 = st.tabs(["① アカウント設定", "② 投稿作成＆収納", "③ 自動化実行"])
+tab1, tab2, tab3 = st.tabs(["① アカウント設定", "② 投稿作成＆自動化", "③ 実行ログ"])
 
 # --- ① アカウント ---
 with tab1:
     st.header("アカウント設定")
-    st.caption("※入力内容は自動保存されます。更新ボタン(F5)を押しても消えません。")
-    
     with st.expander("➕ アカウント追加", expanded=True):
         c1, c2 = st.columns(2)
         nm = c1.text_input("名前", key="n_nm")
         uid = c2.text_input("User ID", key="n_id", type="password")
         sec = st.text_input("App Secret (任意)", key="n_sc", type="password")
         tok = st.text_input("Access Token", key="n_tk", type="password")
-        
         if st.button("保存"):
             if nm and uid and tok:
                 st.session_state.accounts.append({"name": nm, "id": uid, "token": tok, "secret": sec})
                 save_json(ACCOUNTS_FILE, st.session_state.accounts)
-                st.success(f"保存しました: {nm}")
-            else:
-                st.error("必須項目を入力してください")
+                st.success(f"保存: {nm}")
     
     if st.session_state.accounts:
         st.markdown("### 連携中のアカウント")
         for i, acc in enumerate(st.session_state.accounts):
-            c_info, c_del = st.columns([4, 1])
-            c_info.write(f"✅ **{acc['name']}** (ID: {acc['id'][:4]}...)")
-            if c_del.button("削除", key=f"del_acc_{i}"):
+            c_inf, c_del = st.columns([4, 1])
+            c_inf.write(f"✅ **{acc['name']}** (ID: {acc['id'][:4]}...)")
+            if c_del.button("削除", key=f"d_acc_{i}"):
                 st.session_state.accounts.pop(i)
                 save_json(ACCOUNTS_FILE, st.session_state.accounts)
                 st.rerun()
 
-# --- ② 投稿作成＆収納 ---
+# --- ② 投稿作成＆自動化 ---
 with tab2:
     st.header("投稿ファクトリー")
-    st.caption("※作成中の投稿も自動保存されます。(画像ファイルのみ、画面更新時は再選択が必要です)")
     
-    # --- 収納ボックスエリア ---
-    with st.expander("📦 収納ボックス (作成済み投稿)を見る"):
+    # --- 収納ボックス (管理機能) ---
+    with st.expander("📦 収納ボックス (待機中の投稿)"):
         if not st.session_state.storage:
-            st.info("現在、収納されている投稿はありません。")
+            st.info("待機中の投稿はありません")
         else:
-            for i, stored_post in enumerate(st.session_state.storage):
-                st.markdown(f"""<div class="storage-box"><b>📦 収納データ #{i+1}</b><br>内容: {stored_post['text'][:20]}...</div>""", unsafe_allow_html=True)
-                if st.button(f"↩️ 取り出す (編集画面へ戻す) #{i+1}", key=f"restore_{i}"):
-                    st.session_state.posts.append(stored_post)
-                    st.session_state.storage.pop(i)
+            for i, p in enumerate(st.session_state.storage):
+                # アカウント名を取得して表示
+                acc_name = "不明"
+                if 0 <= p['acc_idx'] < len(st.session_state.accounts):
+                    acc_name = st.session_state.accounts[p['acc_idx']]['name']
+                
+                st.markdown(f"""<div class="storage-box"><b>📦 {acc_name} 用の投稿</b><br>内容: {p['text'][:30]}...</div>""", unsafe_allow_html=True)
+                
+                c_res, c_del = st.columns([1, 1])
+                if c_res.button(f"↩️ 修正する", key=f"res_{i}"):
+                    st.session_state.posts = [p] # 編集画面に戻す
+                    st.session_state.storage.pop(i) # 収納から消す
                     save_json(POSTS_FILE, st.session_state.posts)
+                    save_json(STORAGE_FILE, st.session_state.storage)
+                    st.rerun()
+                if c_del.button(f"🗑️ 削除", key=f"del_st_{i}"):
+                    st.session_state.storage.pop(i)
                     save_json(STORAGE_FILE, st.session_state.storage)
                     st.rerun()
 
     st.markdown("---")
-    st.subheader("作業デスク (編集中の投稿)")
+    st.subheader("📝 新規作成 / 編集")
     
-    if st.button("➕ 新規投稿枠を追加"):
-        st.session_state.posts.append({"text": "", "image_file": None, "acc_idx": 0, "random": False, "time_range": (12, 15)})
-        save_json(POSTS_FILE, st.session_state.posts) # 保存
+    # 編集エリア（プレースホルダーを使って後で消去可能にする）
+    editor_placeholder = st.empty()
     
-    if not st.session_state.accounts:
-        st.warning("先にアカウントを追加してください")
-    else:
-        acc_names = [a['name'] for a in st.session_state.accounts]
-        
-        # 編集中の投稿を表示
-        for i, post in enumerate(st.session_state.posts):
-            st.markdown(f"""<div class="post-card"><h4>📝 編集中の投稿 #{i+1}</h4>""", unsafe_allow_html=True)
+    with editor_placeholder.container():
+        if not st.session_state.accounts:
+            st.warning("先にアカウントを追加してください")
+        else:
+            acc_names = [a['name'] for a in st.session_state.accounts]
+            
+            # 編集枠 (現在は1つのみ表示)
+            post = st.session_state.posts[0]
+            
+            st.markdown(f"""<div class="post-card">""", unsafe_allow_html=True)
             c1, c2 = st.columns([1, 1])
             with c1:
                 if post['acc_idx'] >= len(acc_names): post['acc_idx'] = 0
-                post['acc_idx'] = acc_names.index(st.selectbox(f"アカウント #{i+1}", acc_names, index=post['acc_idx'], key=f"s_{i}"))
+                post['acc_idx'] = acc_names.index(st.selectbox(f"アカウント選択", acc_names, index=post['acc_idx'], key=f"s_0"))
             with c2:
-                post['random'] = st.checkbox(f"ランダム時間 #{i+1}", value=post['random'], key=f"r_{i}")
+                post['random'] = st.checkbox(f"ランダム時間を有効化", value=post['random'], key=f"r_0")
                 if post['random']:
-                    s, e = st.slider(f"時間帯 #{i+1}", 0, 24, post['time_range'], key=f"sl_{i}")
+                    s, e = st.slider(f"時間帯設定", 0, 24, post['time_range'], key=f"sl_0")
                     post['time_range'] = (s, e)
             
             c3, c4 = st.columns([1, 1])
             with c3:
-                up = st.file_uploader(f"画像 #{i+1}", type=['png','jpg'], key=f"f_{i}")
+                up = st.file_uploader(f"画像 (任意)", type=['png','jpg'], key=f"f_0")
                 if up: 
                     post['image_file'] = up
                     st.image(up, width=150)
-                elif post['image_file'] is None:
-                    # 画面更新などで画像が外れた場合のメッセージ
-                    pass 
             with c4:
-                post['text'] = st.text_area(f"本文 #{i+1}", value=post['text'], height=100, key=f"t_{i}")
-            
-            if st.button(f"🗑️ 削除 #{i+1}", key=f"d_{i}"):
-                st.session_state.posts.pop(i)
-                save_json(POSTS_FILE, st.session_state.posts) # 削除時保存
-                st.rerun()
+                post['text'] = st.text_area(f"投稿本文", value=post['text'], height=100, key=f"t_0")
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # 常に最新の状態を保存(テキスト入力などを反映させるため)
-        save_json(POSTS_FILE, st.session_state.posts)
+            # JSON保存 (入力途中も保存)
+            save_json(POSTS_FILE, st.session_state.posts)
 
-        # --- 完了ボタンエリア ---
-        if st.session_state.posts:
             st.markdown("---")
-            if st.button("✅ 投稿作成完了 (収納ボックスへしまう)", type="primary"):
-                # 1. 編集中のものを収納へ移動
-                st.session_state.storage.extend(st.session_state.posts)
-                # 2. 編集画面は新しい空の枠1つにリセット
-                st.session_state.posts = [{"text": "", "image_file": None, "acc_idx": 0, "random": False, "time_range": (12, 15)}]
-                
-                # 3. 両方の状態を保存
-                save_json(POSTS_FILE, st.session_state.posts)
-                save_json(STORAGE_FILE, st.session_state.storage)
-                
-                st.balloons()
-                st.success("全ての投稿を収納ボックスにしまいました！新しい枠をセットしました。")
-                time.sleep(1)
-                st.rerun()
+            
+            # === 完了＆自動化ボタン ===
+            if st.button("✅ 完了＆自動化スタート (即時実行)", type="primary"):
+                # 1. バリデーション
+                current_post = st.session_state.posts[0]
+                if not current_post['text'] and not current_post['image_file']:
+                    st.error("本文または画像を入力してください")
+                else:
+                    target_acc_idx = current_post['acc_idx']
+                    
+                    # 2. [1垢1枠ルール] 収納ボックスから、同じアカウントの古い投稿を削除
+                    st.session_state.storage = [p for p in st.session_state.storage if p['acc_idx'] != target_acc_idx]
+                    
+                    # 3. 新しい投稿を収納に追加
+                    st.session_state.storage.append(current_post)
+                    save_json(STORAGE_FILE, st.session_state.storage)
+                    
+                    # 4. 編集画面を「白紙」にリセット (次回の表示用)
+                    st.session_state.posts = [{"text": "", "image_file": None, "acc_idx": 0, "random": False, "time_range": (12, 15)}]
+                    save_json(POSTS_FILE, st.session_state.posts)
+                    
+                    # 5. ★UIを消去して自動化モードへ突入★
+                    editor_placeholder.empty() # 編集画面を消す
+                    
+                    st.success(f"投稿を受け付けました！自動化プロセスを開始します...")
+                    st.toast("自動化モード起動中... ブラウザを閉じないでください", icon="🚀")
+                    
+                    # ログ表示用エリア
+                    log_area = st.empty()
+                    
+                    # === 自動化ループ実行 (収納ボックスの中身を全て処理) ===
+                    # ここで実行することで、ボタンを押した直後に待機・投稿が始まります
+                    for i, p in enumerate(st.session_state.storage):
+                        # アカウント情報取得
+                        if p['acc_idx'] >= len(st.session_state.accounts): continue
+                        acc = st.session_state.accounts[p['acc_idx']]
+                        
+                        st.info(f"▶ 処理中: {acc['name']} の投稿...")
+                        
+                        # ランダム待機ロジック
+                        if p['random']:
+                            s, e = p['time_range']
+                            if s >= e: e = 24
+                            now = get_jst_time()
+                            
+                            target_h = random.randint(s, max(s, e-1))
+                            target_m = random.randint(0, 59)
+                            target_time = now.replace(hour=target_h, minute=target_m, second=0)
+                            
+                            wait = (target_time - now).total_seconds()
+                            
+                            if wait > 0:
+                                st.warning(f"⏳ 待機モード: {target_h}:{target_m} に投稿します ({int(wait)}秒待機中...)")
+                                # 待機
+                                time.sleep(wait)
+                            else:
+                                st.warning("時間が過ぎているため、即時投稿します")
+                                time.sleep(2)
+                        
+                        # 投稿実行
+                        suc, msg = post_to_threads(acc, p['text'], p['image_file'])
+                        
+                        # ログ記録
+                        now_s = get_jst_time().strftime('%H:%M:%S')
+                        res_icon = "✅" if suc else "❌"
+                        log_msg = f"{res_icon} {now_s} [{acc['name']}] {msg}"
+                        st.session_state.logs.append(log_msg)
+                        
+                        # リアルタイムログ更新
+                        log_area.code("\n".join(reversed(st.session_state.logs)))
+                    
+                    st.balloons()
+                    st.success("すべての自動化タスクが完了しました！")
+                    # 処理が終わったらリロードして初期状態(白紙)に戻す
+                    time.sleep(3)
+                    st.rerun()
 
-# --- ③ 自動化実行 ---
+# --- ③ 実行ログ ---
 with tab3:
-    st.header("自動化実行")
-    st.write("収納ボックスに入っている投稿、または編集中の投稿すべてをスケジュール実行します。")
-    
-    # 実行対象を結合 (編集中のもの + 収納されているもの)
-    all_targets = [p for p in st.session_state.posts if p['text'] or p['image_file']] + st.session_state.storage
-    st.info(f"現在の待機中ポスト: {len(all_targets)}件")
-    
-    if st.button("🚀 自動化スタート"):
-        if not all_targets:
-            st.error("投稿データがありません。")
-        else:
-            st.toast("開始します...")
-            log = st.empty()
-            
-            for i, post in enumerate(all_targets):
-                acc = st.session_state.accounts[post['acc_idx']]
-                
-                if post['random']:
-                    s, e = post['time_range']
-                    if s >= e: e = 24
-                    now = get_jst_time() 
-                    
-                    target_h = random.randint(s, max(s, e-1))
-                    target_m = random.randint(0, 59)
-                    target_time = now.replace(hour=target_h, minute=target_m, second=0)
-                    
-                    wait = (target_time - now).total_seconds()
-                    
-                    if wait > 0:
-                        st.info(f"待機中... {target_h}:{target_m} に投稿します ({int(wait)}秒後)")
-                        time.sleep(wait)
-                    else:
-                        st.warning(f"設定時間({target_h}:{target_m})を過ぎているため即時投稿します")
-                        time.sleep(3)
-                
-                suc, msg = post_to_threads(acc, post['text'], post['image_file'])
-                now_s = get_jst_time().strftime('%H:%M:%S')
-                res_icon = "✅" if suc else "❌"
-                st.session_state.logs.append(f"{res_icon} {now_s} [{acc['name']}] {msg}")
-                
-                log.code("\n".join(reversed(st.session_state.logs)))
-            
-            st.success("全処理完了")
+    st.header("実行ログ履歴")
+    if st.session_state.logs:
+        st.code("\n".join(reversed(st.session_state.logs)))
+    else:
+        st.info("履歴はありません")
