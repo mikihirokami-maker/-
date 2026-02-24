@@ -188,10 +188,7 @@ with st.sidebar:
     st.subheader("📡 アカウント別稼働設定")
     if st.session_state.accounts:
         for i, acc in enumerate(st.session_state.accounts):
-            # サイドバーで直接ON/OFFを切り替える
             is_on = st.toggle(f"{acc['name']}", value=acc.get('active', True), key=f"side_acc_{i}")
-            
-            # 状態が変わったら保存
             if is_on != acc.get('active', True):
                 acc['active'] = is_on
                 save_json(ACCOUNTS_FILE, st.session_state.accounts)
@@ -203,7 +200,6 @@ with st.sidebar:
     
     if st.button("ログクリア"): st.session_state.logs = []
     
-    # ログ表示エリア
     st.markdown("### 📜 実行ログ")
     log_area = st.empty()
     if st.session_state.logs:
@@ -242,7 +238,6 @@ with tab1:
         for i, acc in enumerate(st.session_state.accounts):
             with st.container():
                 c1, c2 = st.columns([4, 1])
-                # サイドバーで制御するため、ここは状態表示のみにする
                 status_text = "🟢 稼働中" if acc.get('active', True) else "⚪ 停止中"
                 c1.write(f"**{acc['name']}** - {status_text}")
                 
@@ -278,17 +273,14 @@ with tab2:
                     if 'next_run' in p and p['next_run']:
                         info_text += f" | 🕒 次回: {p['next_run'].strftime('%m/%d %H:%M')}"
                     
-                    # 編集中のハイライト
                     if st.session_state.edit_target_idx == original_idx:
                         st.info(f"✏️ 編集中の項目: {info_text}")
                     else:
                         st.warning(info_text)
                     
-                    # リスト内での画像プレビュー
                     if p.get('image_file'):
                         st.image(p['image_file'], width=150)
                     
-                    # ボタン群（削除・編集）
                     c_del, c_edit = st.columns([1, 1])
                     if c_del.button("🗑️ 削除", key=f"del_s_{original_idx}"):
                         st.session_state.storage.pop(original_idx)
@@ -310,7 +302,6 @@ with tab2:
         form_title = "✏️ 投稿を編集" if st.session_state.edit_target_idx is not None else "📝 新しい自動投稿を追加"
         st.subheader(form_title)
         
-        # 初期値セット
         default_text = ""
         default_range = (12, 15)
         default_random = True
@@ -330,13 +321,12 @@ with tab2:
             
             c1, c2 = st.columns([1, 1])
             img_file = c1.file_uploader("画像 (変更する場合のみ)", type=['png','jpg'], key="form_file")
-            # アップロード時のプレビュー
+            
             if img_file is not None:
                 c1.image(img_file, caption="選択中の画像", width=200)
 
             txt_content = c2.text_area("投稿本文", value=default_text, height=150, key="form_text")
             
-            # 保存・追加ボタン
             btn_label = "🔄 更新して保存" if st.session_state.edit_target_idx is not None else "✅ リストに追加 (毎日自動化)"
             
             if st.button(btn_label, type="primary"):
@@ -346,19 +336,17 @@ with tab2:
                     new_next_run = calculate_next_run(time_range)
                     
                     if st.session_state.edit_target_idx is not None:
-                        # 更新処理
                         idx = st.session_state.edit_target_idx
                         st.session_state.storage[idx]['text'] = txt_content
                         st.session_state.storage[idx]['random'] = chk_random
                         st.session_state.storage[idx]['time_range'] = time_range
                         st.session_state.storage[idx]['next_run'] = new_next_run
-                        if img_file: # 画像がアップされた場合のみ更新
+                        if img_file: 
                             st.session_state.storage[idx]['image_file'] = img_file
                         
                         st.toast("設定を更新しました！")
                         st.session_state.edit_target_idx = None
                     else:
-                        # 新規追加処理
                         new_entry = {
                             "text": txt_content, "image_file": img_file, "acc_idx": selected_acc_idx,
                             "random": chk_random, "time_range": time_range,
@@ -371,7 +359,6 @@ with tab2:
                     time.sleep(1)
                     st.rerun()
             
-            # キャンセルボタン
             if st.session_state.edit_target_idx is not None:
                 if st.button("キャンセル"):
                     st.session_state.edit_target_idx = None
