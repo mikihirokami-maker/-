@@ -66,8 +66,8 @@ if 'storage' not in st.session_state:
     st.session_state.storage = loaded_st
 
 if 'logs' not in st.session_state: st.session_state.logs = []
-# 初期モードは 'running' (稼働中)
-if 'app_mode' not in st.session_state: st.session_state.app_mode = 'running'
+# モード管理: 'running' (稼働中) または 'editing' (作成中)
+if 'app_mode' not in st.session_state: st.session_state.app_mode = 'running' 
 
 # --- ユーティリティ ---
 def get_jst_time():
@@ -153,7 +153,7 @@ def post_to_threads(account, text, image_obj=None):
         if 'id' not in res: return False, f"エラー: {res}"
         
         creation_id = res['id']
-        if image_url: time.sleep(10) # メディア処理待機
+        if image_url: time.sleep(10) # 待機
         else: time.sleep(2)
         
         url_publish = f"https://graph.threads.net/v1.0/{user_id}/threads_publish"
@@ -164,22 +164,20 @@ def post_to_threads(account, text, image_obj=None):
     except Exception as e:
         return False, str(e)
 
-# --- 画面構築 ---
+# --- アプリのメイン構造 ---
 st.title("THREADS AUTO MASTER ♾️")
 
-# サイドバー（共通メニュー）
+# サイドバー（共通）
 with st.sidebar:
     st.title("🤖 システム制御")
     st.info(f"🇯🇵 {get_jst_time().strftime('%Y-%m-%d %H:%M:%S')}")
     
-    # ★重要: モード切替ボタン★
+    # モード切替スイッチ（ボタン）
     if st.session_state.app_mode == 'running':
-        st.success("● 稼働中 (Running)")
-        if st.button("✏️ 新規作成 / 設定変更 (一時停止)", type="primary"):
+        if st.button("✏️ 止めて新規作成する"):
             st.session_state.app_mode = 'editing'
             st.rerun()
     else:
-        st.warning("⏸️ 設定中 (Paused)")
         if st.button("↩️ 作成をやめて稼働に戻る"):
             st.session_state.app_mode = 'running'
             st.rerun()
@@ -187,9 +185,9 @@ with st.sidebar:
     st.markdown("---")
     if st.button("ログクリア"): st.session_state.logs = []
     
-    # アカウント管理 (簡易版)
-    with st.expander("アカウント追加"):
-        new_token = st.text_input("New Token", type="password")
+    # アカウント管理 (簡易)
+    with st.expander("アカウント設定"):
+        new_token = st.text_input("New Access Token", type="password")
         if st.button("ID自動追加"):
             if new_token:
                 info = get_threads_user_info(new_token)
@@ -212,17 +210,19 @@ if st.session_state.app_mode == 'running':
     status_area = st.empty()
     log_area = st.empty()
     
-    # 稼働ループ
+    # 無限ループで監視
     while True:
-        if st.session_state.app_mode != 'running': st.rerun()
-        
+        # モードが切り替わったらループを抜ける
+        if st.session_state.app_mode != 'running':
+            st.rerun()
+            
         now = get_jst_time()
         
         # 保存されている全タスクをチェック
         status_html = "### 📅 現在のスケジュール状況<br>"
         
         if not st.session_state.storage:
-            status_html += "<p style='color: yellow;'>設定がありません。「✏️ 新規作成」ボタンから投稿を追加してください。</p>"
+            status_html += "<p>まだ自動投稿が設定されていません。「✏️ 新規作成」から追加してください。</p>"
         
         for i, p in enumerate(st.session_state.storage):
             if p['acc_idx'] >= len(st.session_state.accounts): continue
@@ -234,11 +234,11 @@ if st.session_state.app_mode == 'running':
                 save_json(STORAGE_FILE, st.session_state.storage)
             
             time_diff = (p['next_run'] - now).total_seconds()
-            nxt_str = p['next_run'].strftime('%m/%d %H:%M:%S')
             
-            # ステータス表示
+            # ステータス表示作成
+            nxt_str = p['next_run'].strftime('%m/%d %H:%M:%S')
             style = "border-color: #00f2ff;"
-            msg = f"次回投稿: {nxt_str} (毎日 {p['time_range'][0]}時〜{p['time_range'][1]}時)"
+            msg = f"次回投稿: {nxt_str}"
             
             if time_diff <= 0:
                 # 実行タイム！
@@ -255,7 +255,7 @@ if st.session_state.app_mode == 'running':
                 
                 status_area.success(f"完了！次回は {p['next_run'].strftime('%m/%d %H:%M')} です")
                 time.sleep(3)
-                st.rerun() 
+                st.rerun() # 画面更新
                 
             elif time_diff < 60:
                 style = "border-color: yellow; color: yellow;"
@@ -264,61 +264,55 @@ if st.session_state.app_mode == 'running':
             status_html += f"<div class='bot-status' style='{style}'><b>{acc['name']}</b><br>{msg}</div>"
         
         status_area.markdown(status_html, unsafe_allow_html=True)
+        
+        # ログ表示
         if st.session_state.logs:
             log_area.code("\n".join(reversed(st.session_state.logs)))
         
-        time.sleep(1) # 1秒ごとに更新
+        time.sleep(1) # 1秒ごとにチェック
 
 # ==========================================
 # 🅱️ 編集モード (Editing Mode)
 # ==========================================
 elif st.session_state.app_mode == 'editing':
-    st.header("📝 新規投稿の作成 / 設定変更")
+    st.header("📝 新規投稿の作成")
     
     if not st.session_state.accounts:
         st.warning("左のサイドバーからアカウントを追加してください")
     else:
-        # アカウント選択 (フィルタリングの親)
+        # アカウント選択
         acc_names = [a['name'] for a in st.session_state.accounts]
-        selected_acc_name = st.selectbox("設定するアカウントを選択", acc_names)
+        selected_acc_name = st.selectbox("アカウントを選択", acc_names)
         selected_acc_idx = acc_names.index(selected_acc_name)
         
         st.markdown("---")
         
         # 既存設定の確認
         current_setting = next((p for p in st.session_state.storage if p['acc_idx'] == selected_acc_idx), None)
-        
-        # 設定状況の表示
         if current_setting:
-            st.info(f"✅ このアカウントには既に設定があります。\n\n"
-                    f"次回投稿: {current_setting['next_run'].strftime('%H:%M')}\n"
-                    f"内容: {current_setting['text'][:20]}...")
-            
+            st.info(f"💡 このアカウントには既に設定があります (次回: {current_setting['next_run'].strftime('%H:%M')})。保存すると上書きされます。")
             if st.button("🗑️ 設定を削除して停止する"):
                 st.session_state.storage.remove(current_setting)
                 save_json(STORAGE_FILE, st.session_state.storage)
                 st.success("削除しました")
                 st.rerun()
-        else:
-            st.warning("現在、設定はありません。")
-
-        st.markdown("### 新しい設定を入力")
         
+        # 作成フォーム
         with st.container():
-            # アカウントごとにキーを変えて混同を防ぐ
-            chk_random = st.checkbox("⏰ ランダム時間を有効化", value=True, key=f"r_{selected_acc_idx}")
+            chk_random = st.checkbox("⏰ ランダム時間を有効化", value=True)
             time_range = (12, 15)
             if chk_random:
-                time_range = st.slider("時間帯", 0, 24, (9, 21), key=f"sl_{selected_acc_idx}")
+                time_range = st.slider("時間帯", 0, 24, (9, 21))
+                # ユーザー要望: 自分で決めた時間であることを明示
                 st.caption(f"※毎日 {time_range[0]}:00 〜 {time_range[1]}:00 の間でランダムに1回投稿します")
             
             c1, c2 = st.columns([1, 1])
-            img_file = c1.file_uploader("画像 (任意)", type=['png','jpg'], key=f"f_{selected_acc_idx}")
+            img_file = c1.file_uploader("画像 (任意)", type=['png','jpg'])
             if img_file: c1.image(img_file, width=150)
             
-            txt_content = c2.text_area("投稿本文", height=150, key=f"t_{selected_acc_idx}")
+            txt_content = c2.text_area("投稿本文", height=150)
             
-            if st.button("✅ 保存して稼働再開 (Save & Run)", type="primary"):
+            if st.button("✅ 保存して自動化を再開 (Running)", type="primary"):
                 if not txt_content and not img_file:
                     st.error("内容が空です")
                 else:
