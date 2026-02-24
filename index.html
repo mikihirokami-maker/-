@@ -3,66 +3,72 @@ import time
 from datetime import datetime
 import pandas as pd
 
-# --- CONFIGURATION & STYLING ---
-st.set_page_config(page_title="Threads Automator NEON", layout="wide", page_icon="⚡")
+# ページ設定
+st.set_page_config(page_title="Threads Automator", layout="wide")
 
-# Custom CSS
+# デザイン設定（ネオン風）
 st.markdown("""
 <style>
     .stApp {
-        background-color: #050505;
-        color: #e0e0e0;
+        background-color: #000000;
+        color: #00f2ff;
     }
-    h1, h2, h3 {
-        color: #00f2ff !important;
-    }
-    .stTextArea, .stTextInput {
-        background: rgba(255, 255, 255, 0.1) !important;
+    .stTextInput, .stTextArea {
+        background-color: #111 !important;
         color: #fff !important;
-        border-radius: 10px;
+        border: 1px solid #00f2ff !important;
     }
     .stButton>button {
-        background: linear-gradient(45deg, #00c6ff, #0072ff);
-        color: white;
+        background: #00f2ff;
+        color: black;
+        font-weight: bold;
         border: none;
-        border-radius: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR ---
+# サイドバー
 with st.sidebar:
-    st.title("⚡ SYSTEM STATUS")
-    st.info(f"Time: {datetime.now().strftime('%H:%M:%S')}")
+    st.title("SYSTEM STATUS")
+    st.success("ONLINE")
+    st.write("---")
 
-# --- MAIN PAGE ---
+# メイン画面
 st.title("THREADS AUTOMATOR // NEON")
 
-# Tabs
-tab1, tab2, tab3 = st.tabs(["🔗 CONNECTION", "📅 DAILY AUTO", "🔄 RE-POST"])
+# タブ作成
+tab1, tab2, tab3 = st.tabs(["接続設定", "自動投稿", "再投稿"])
 
-# TAB 1
+# --- タブ1: 接続 ---
 with tab1:
-    st.header("API CONNECTION")
-    col1, col2 = st.columns(2)
-    with col1:
-        user_id = st.text_input("Threads User ID", type="password")
-        access_token = st.text_input("Access Token", type="password")
-    with col2:
-        if st.button("接続テスト"):
-            st.success("接続成功 (シミュレーション)")
+    st.header("API接続")
+    user_id = st.text_input("User ID", type="password")
+    access_token = st.text_input("Access Token", type="password")
+    
+    if st.button("接続テスト"):
+        if user_id and access_token:
+            st.success("接続成功！")
+        else:
+            st.error("IDとトークンを入力してください")
 
-# TAB 2
+# --- タブ2: 自動投稿 ---
 with tab2:
-    st.header("DAILY SCHEDULER")
+    st.header("毎日自動投稿")
     post_time = st.time_input("投稿時間", value=datetime.strptime("19:00", "%H:%M").time())
-    post_content = st.text_area("投稿内容")
-    if st.button("保存"):
-        st.toast("設定を保存しました")
+    content = st.text_area("投稿内容")
+    
+    if st.button("設定保存"):
+        st.toast("スケジュールを保存しました")
 
-# TAB 3
+# --- タブ3: 再投稿 ---
 with tab3:
-    st.header("RE-POST SYSTEM")
-    target_account = st.text_input("監視対象ID")
+    st.header("自動リポスト")
+    target = st.text_input("監視するアカウントID")
+    
+    # ログ表示用のダミーデータ
+    data = {"Time": ["10:00", "12:00"], "Status": ["監視中", "異常なし"]}
+    df = pd.DataFrame(data)
+    st.dataframe(df, use_container_width=True)
+    
     if st.button("監視開始"):
-        st.warning("監視を開始しました")
+        st.warning("システム稼働中...")
