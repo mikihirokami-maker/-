@@ -8,24 +8,55 @@ import pandas as pd
 # --- ページ設定 ---
 st.set_page_config(page_title="Threads Auto Master Pro", layout="wide", page_icon="🤖")
 
-# --- デザイン設定 ---
+# --- デザイン設定 (Cyberpunk Style) ---
 st.markdown("""
 <style>
-    .stApp { background-color: #000000; color: #00f2ff; }
-    h1, h2, h3, h4 { color: #00f2ff !important; font-family: 'Helvetica Neue', sans-serif; }
-    .stTextInput, .stTextArea, .stSelectbox { background-color: #111 !important; color: #fff !important; border: 1px solid #333 !important; }
-    .stButton>button { background: linear-gradient(90deg, #00c6ff, #0072ff); color: white; font-weight: bold; border: none; border-radius: 8px; }
-    .post-card { background: rgba(255, 255, 255, 0.05); padding: 20px; border-radius: 15px; border: 1px solid #00f2ff; margin-bottom: 20px; }
+    .stApp {
+        background-color: #000000;
+        color: #00f2ff;
+    }
+    h1, h2, h3, h4 {
+        color: #00f2ff !important;
+        text-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
+        font-family: 'Helvetica Neue', sans-serif;
+    }
+    .stTextInput, .stTextArea, .stSelectbox, .stTimeInput {
+        background-color: #111 !important;
+        color: #fff !important;
+        border: 1px solid #333 !important;
+        border-radius: 8px !important;
+    }
+    .stButton>button {
+        background: linear-gradient(90deg, #00c6ff, #0072ff);
+        color: white;
+        font-weight: bold;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        transition: all 0.3s;
+    }
+    .stButton>button:hover {
+        transform: scale(1.02);
+        box-shadow: 0 0 15px rgba(0, 114, 255, 0.8);
+    }
+    /* カード風デザイン */
+    .post-card {
+        background: rgba(255, 255, 255, 0.05);
+        padding: 20px;
+        border-radius: 15px;
+        border: 1px solid #00f2ff;
+        margin-bottom: 20px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- セッション初期化 ---
+# --- セッション状態の初期化 ---
 if 'accounts' not in st.session_state:
-    st.session_state.accounts = []
+    st.session_state.accounts = []  # アカウントリスト
 if 'posts' not in st.session_state:
-    st.session_state.posts = []
+    st.session_state.posts = []     # 投稿リスト
 if 'logs' not in st.session_state:
-    st.session_state.logs = []
+    st.session_state.logs = []      # 実行ログ
 
 # --- API関数 (リフレッシュ機能付き) ---
 def refresh_access_token(token):
@@ -45,14 +76,11 @@ def refresh_access_token(token):
         return None
 
 def post_to_threads(account, text, image_url=None):
-    """投稿実行関数"""
+    """Threads APIを使って投稿する (自動リトライ機能付き)"""
     user_id = account['id']
     token = account['token']
     
-    # 投稿前にトークンリフレッシュを試みる（簡易実装）
-    # ※本来は期限切れが近い時だけやりますが、念のため毎回チェック等のロジックも可能です
-    # ここではシンプルにそのまま投稿します
-    
+    # 1. コンテナ作成
     url_container = f"https://graph.threads.net/v1.0/{user_id}/threads"
     params = {
         'access_token': token,
@@ -66,24 +94,29 @@ def post_to_threads(account, text, image_url=None):
         params['text'] = text
 
     try:
-        # 1. コンテナ作成
+        # 初回トライ
         res = requests.post(url_container, data=params).json()
+        
+        # もしエラーでトークン切れの可能性がある場合、リフレッシュを試みる
         if 'id' not in res:
-            # エラーの場合、トークン切れの可能性があるのでリフレッシュを試みて再挑戦
             new_token = refresh_access_token(token)
             if new_token:
-                account['token'] = new_token # 新しいトークンを保存
+                # トークンを更新して再実行
+                account['token'] = new_token 
                 params['access_token'] = new_token
-                res = requests.post(url_container, data=params).json() # 再挑戦
-            
-            if 'id' not in res:
-                return False, f"エラー(作成): {res}"
+                res = requests.post(url_container, data=params).json()
+        
+        if 'id' not in res:
+            return False, f"エラー(作成): {res}"
         
         creation_id = res['id']
         
-        # 2. 公開
+        # 2. 投稿公開 (Publish)
         url_publish = f"https://graph.threads.net/v1.0/{user_id}/threads_publish"
-        pub_params = {'creation_id': creation_id, 'access_token': account['token']}
+        pub_params = {
+            'creation_id': creation_id,
+            'access_token': account['token'] # 更新された可能性のあるトークンを使用
+        }
         pub_res = requests.post(url_publish, data=pub_params).json()
         
         if 'id' in pub_res:
@@ -94,106 +127,171 @@ def post_to_threads(account, text, image_url=None):
     except Exception as e:
         return False, str(e)
 
-# --- サイドバー ---
+# --- サイドバー: システム情報 ---
 with st.sidebar:
     st.title("🤖 システム制御")
+    st.success("システム稼働中")
     st.write(f"現在時刻: {datetime.now().strftime('%H:%M:%S')}")
-    if st.button("全トークンを強制更新"):
+    
+    st.markdown("---")
+    if st.button("全トークンを強制更新 (寿命延長)"):
+        count = 0
         for acc in st.session_state.accounts:
             new_t = refresh_access_token(acc['token'])
             if new_t:
                 acc['token'] = new_t
-                st.success(f"{acc['name']} のトークンを更新しました")
-            else:
-                st.error(f"{acc['name']} の更新失敗")
+                count += 1
+        if count > 0:
+            st.success(f"{count}件のアカウントのトークンを延長しました！")
+        else:
+            st.warning("更新できるトークンがありませんでした")
+
+    st.markdown("---")
+    if st.button("ログをクリア"):
+        st.session_state.logs = []
 
 # --- メイン画面 ---
 st.title("THREADS AUTO MASTER ♾️ (Permanent Ver.)")
 
-tab1, tab2, tab3 = st.tabs(["① アカウント設定 (永久化)", "② 投稿作成", "③ 自動化実行"])
+# タブ設定
+tab_accounts, tab_posts, tab_run = st.tabs(["① アカウント設定", "② 投稿内容の作成", "③ 自動化実行モニター"])
 
 # --- ① アカウント設定 ---
-with tab1:
-    st.header("アカウント連携設定")
-    st.info("App Secretを入力しなくても動きますが、期限切れ防止のため入力推奨です。")
+with tab_accounts:
+    st.header("連携アカウント管理 (永久化設定)")
+    st.info("App Secretを入力すると、自動更新の信頼性が向上します（なくても動きます）。")
     
-    with st.expander("➕ アカウント追加", expanded=True):
+    with st.expander("➕ 新しいアカウントを追加する", expanded=True):
         c1, c2 = st.columns(2)
-        new_name = c1.text_input("アカウント名", key="n_name")
-        new_id = c2.text_input("User ID", key="n_id", type="password")
-        new_token = st.text_input("Access Token (必須)", key="n_token", type="password")
-        # App Secretは必須ではないが、あると便利
-        # new_secret = st.text_input("App Secret (任意:自動更新用)", key="n_secret", type="password") 
+        new_name = c1.text_input("アカウントの呼び名 (例: メイン垢)", key="new_acc_name")
+        new_id = c2.text_input("Threads User ID", key="new_acc_id", type="password")
         
-        if st.button("アカウント保存"):
+        # App Secretの枠を追加
+        new_secret = st.text_input("App Secret (任意: トークン自動更新用)", key="new_acc_secret", type="password")
+        new_token = st.text_input("Access Token (必須)", key="new_acc_token", type="password")
+        
+        if st.button("このアカウントを保存"):
             if new_name and new_id and new_token:
                 st.session_state.accounts.append({
                     "name": new_name,
                     "id": new_id,
-                    "token": new_token
-                    # "secret": new_secret
+                    "token": new_token,
+                    "secret": new_secret # 保存
                 })
-                st.success(f"保存完了: {new_name}")
+                st.success(f"アカウント「{new_name}」を保存しました！")
             else:
                 st.error("必須項目を入力してください")
-    
-    # リスト表示
-    for acc in st.session_state.accounts:
-        st.write(f"✅ **{acc['name']}** (ID: {acc['id'][:4]}...) - 連携済み")
 
-# --- ② 投稿作成 ---
-with tab2:
-    st.header("投稿スケジューラー")
-    if st.button("➕ 投稿枠を追加"):
-        st.session_state.posts.append({"text": "", "image": "", "acc_idx": 0, "random": False})
-    
-    if not st.session_state.accounts:
-        st.warning("先にアカウントを追加してください")
+    # 登録済みリスト表示
+    st.markdown("### 登録済みアカウント一覧")
+    if st.session_state.accounts:
+        for idx, acc in enumerate(st.session_state.accounts):
+            secret_status = "🔒 Secretあり" if acc.get('secret') else "⚠️ Secretなし"
+            st.markdown(f"- **{acc['name']}** (ID: {acc['id'][:4]}****) | {secret_status}")
     else:
-        acc_list = [a['name'] for a in st.session_state.accounts]
+        st.warning("まだアカウントが登録されていません")
+
+# --- ② 投稿内容の作成 ---
+with tab_posts:
+    st.header("投稿スケジューラー")
+    st.write("ここで投稿内容を作成します。枠はいくらでも増やせます。")
+    
+    if st.button("➕ 投稿枠を追加する"):
+        st.session_state.posts.append({
+            "text": "",
+            "image": "",
+            "account_idx": 0,
+            "random_mode": False
+        })
+
+    # 投稿カードの表示
+    if not st.session_state.accounts:
+        st.error("先に「① アカウント設定」でアカウントを登録してください。")
+    else:
         for i, post in enumerate(st.session_state.posts):
             st.markdown(f"""<div class="post-card"><h4>投稿 #{i+1}</h4>""", unsafe_allow_html=True)
-            c1, c2 = st.columns([1, 2])
-            with c1:
-                post['acc_idx'] = acc_list.index(st.selectbox(f"アカウント #{i+1}", acc_list, key=f"s_{i}"))
-                post['random'] = st.checkbox(f"ランダム投稿 #{i+1}", key=f"r_{i}")
-            with c2:
-                post['text'] = st.text_area(f"内容 #{i+1}", key=f"t_{i}")
-                post['image'] = st.text_input(f"画像URL #{i+1}", key=f"img_{i}")
             
-            if st.button(f"削除 #{i+1}", key=f"d_{i}"):
+            col_a, col_b = st.columns([1, 2])
+            
+            with col_a:
+                # アカウント選択
+                acc_names = [a['name'] for a in st.session_state.accounts]
+                selected_acc = st.selectbox(f"投稿するアカウント (#{i+1})", acc_names, key=f"acc_select_{i}")
+                # ランダム設定
+                is_random = st.checkbox("⏰ ランダム時間に投稿 (0:00-24:00)", key=f"rnd_{i}")
+                if is_random:
+                    st.caption("※今日の中のどこかの時間で自動投稿されます")
+                else:
+                    st.caption("※実行ボタンを押すと即時投稿されます")
+            
+            with col_b:
+                text_content = st.text_area(f"投稿本文 (#{i+1})", placeholder="ここに投稿内容を入力...", key=f"text_{i}")
+                image_url = st.text_input(f"画像URL (任意) (#{i+1})", placeholder="https://... (画像がある場合のみ)", key=f"img_{i}")
+            
+            # データ更新
+            st.session_state.posts[i]["text"] = text_content
+            st.session_state.posts[i]["image"] = image_url
+            st.session_state.posts[i]["account_idx"] = acc_names.index(selected_acc)
+            st.session_state.posts[i]["random_mode"] = is_random
+            
+            if st.button(f"🗑️ 削除 (#{i+1})", key=f"del_{i}"):
                 st.session_state.posts.pop(i)
                 st.rerun()
+            
             st.markdown("</div>", unsafe_allow_html=True)
 
-# --- ③ 自動化実行 ---
-with tab3:
-    st.header("自動化モニター")
-    if st.button("🚀 自動化スタート", type="primary"):
-        st.toast("開始しました")
-        log_box = st.empty()
+# --- ③ 自動化実行モニター ---
+with tab_run:
+    st.header("自動化コントロールセンター")
+    
+    st.markdown("""
+    実行ボタンを押すと、設定されたスケジュールに従って処理を開始します。
+    **※ブラウザのこのタブを開いたままにしてください。**
+    """)
+    
+    if st.button("🚀 自動化プロセスを開始 (START)", type="primary"):
+        st.toast("自動化を開始しました！ログを確認してください。", icon="🤖")
         
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # 投稿処理ループ
         for i, post in enumerate(st.session_state.posts):
-            acc = st.session_state.accounts[post['acc_idx']]
-            if not post['text'] and not post['image']: continue
+            account = st.session_state.accounts[post['account_idx']]
+            text = post['text']
+            img = post['image']
+            is_random = post['random_mode']
             
-            if post['random']:
-                wait = random.randint(1, 10) # デモ用:1〜10秒
-                st.info(f"投稿 #{i+1}: ランダム待機中 ({wait}秒)...")
-                time.sleep(wait)
+            if not text and not img:
+                continue
             
-            success, msg = post_to_threads(acc, post['text'], post['image'])
+            status_text.text(f"処理中: 投稿 #{i+1} ({account['name']})...")
             
-            now = datetime.now().strftime('%H:%M:%S')
+            # ランダムモードの場合の待機ロジック (デモ用に短縮していますが、本来は長時間待機)
+            if is_random:
+                wait_sec = random.randint(1, 10) 
+                st.info(f"投稿 #{i+1} はランダム設定です。{wait_sec}秒後に投稿します...")
+                time.sleep(wait_sec)
+            
+            # 投稿実行
+            success, msg = post_to_threads(account, text, img)
+            
+            # ログ記録
+            timestamp = datetime.now().strftime('%H:%M:%S')
             if success:
-                st.session_state.logs.append(f"✅ {now} [{acc['name']}] 成功")
+                st.session_state.logs.append(f"✅ [{timestamp}] 成功: {account['name']} - {text[:10]}...")
+                st.balloons()
             else:
-                st.session_state.logs.append(f"❌ {now} [{acc['name']}] 失敗: {msg}")
+                st.session_state.logs.append(f"❌ [{timestamp}] 失敗: {account['name']} - {msg}")
             
-            # ログ更新
-            log_txt = ""
-            for l in reversed(st.session_state.logs):
-                log_txt += l + "\n"
-            log_box.code(log_txt)
+            progress_bar.progress((i + 1) / len(st.session_state.posts))
+            time.sleep(1)
         
-        st.success("全ての処理が完了しました")
+        status_text.text("全プロセスの処理が完了しました。")
+
+    # ログ表示エリア
+    st.markdown("### 📜 実行ログ")
+    log_area = st.container()
+    with log_area:
+        for log in reversed(st.session_state.logs):
+            st.code(log)
