@@ -41,13 +41,11 @@ def load_json(file_path):
     return []
 
 def save_json(file_path, data):
-    # 画像オブジェクトは保存できないので除外
     serializable_data = []
     for item in data:
         item_copy = item.copy()
         if 'image_file' in item_copy:
             del item_copy['image_file']
-        # datetimeオブジェクトがあれば文字列に変換
         if 'next_run' in item_copy and isinstance(item_copy['next_run'], datetime):
             item_copy['next_run'] = item_copy['next_run'].isoformat()
         serializable_data.append(item_copy)
@@ -61,7 +59,6 @@ if 'storage' not in st.session_state:
     loaded_st = load_json(STORAGE_FILE)
     for p in loaded_st: 
         p['image_file'] = None
-        # 日付文字列をdatetimeに戻す
         if 'next_run' in p and p['next_run']:
             try:
                 p['next_run'] = datetime.fromisoformat(p['next_run'])
@@ -78,26 +75,20 @@ def get_jst_time():
     return datetime.now(JST)
 
 def calculate_next_run(time_range):
-    """次の投稿時間を計算 (今日または明日)"""
     s, e = time_range
     if s >= e: e = 24
     now = get_jst_time()
     
-    # ランダムな時間を生成
     target_h = random.randint(s, max(s, e-1))
     target_m = random.randint(0, 59)
     target_time = now.replace(hour=target_h, minute=target_m, second=0)
     
-    # もし生成した時間がもう過ぎていたら、明日に設定するか、即時投稿するか
-    # ここでは「過ぎていたら即時(今日)」とし、次回から明日になるように運用
     if target_time < now:
-        # 便宜上、現在時刻の少しあとに設定
         target_time = now + timedelta(seconds=10)
         
     return target_time
 
 def schedule_for_tomorrow(time_range):
-    """明日のランダムな時間を設定"""
     s, e = time_range
     if s >= e: e = 24
     now = get_jst_time()
@@ -143,8 +134,6 @@ def post_to_threads(account, text, image_obj=None):
     image_url = None
     
     if image_obj is not None:
-        # 画像再アップロードが必要（セッション切れ対策）
-        # ※注意: 自動化ループ中、image_objがNone(ファイル消失)の場合は投稿不可
         try:
             image_url = upload_image_to_imgur(image_obj)
         except:
@@ -168,7 +157,7 @@ def post_to_threads(account, text, image_obj=None):
         if 'id' not in res: return False, f"エラー: {res}"
         
         creation_id = res['id']
-        if image_url: time.sleep(10) # 待機
+        if image_url: time.sleep(10)
         else: time.sleep(2)
         
         url_publish = f"https://graph.threads.net/v1.0/{user_id}/threads_publish"
@@ -179,7 +168,7 @@ def post_to_threads(account, text, image_obj=None):
     except Exception as e:
         return False, str(e)
 
-# --- 🚀 ボット実行画面 (無限ループ) ---
+# --- ボット実行画面 ---
 if st.session_state.is_bot_running:
     st.title("🤖 自動投稿ボット稼働中")
     
@@ -198,41 +187,33 @@ if st.session_state.is_bot_running:
         now = get_jst_time()
         active_tasks = 0
         
-        # 保存されている全タスクをチェック
         for i, p in enumerate(st.session_state.storage):
             if p['acc_idx'] >= len(st.session_state.accounts): continue
             acc = st.session_state.accounts[p['acc_idx']]
             
-            # 次回実行時刻が設定されていない、または文字列の場合は修復
             if 'next_run' not in p or not isinstance(p['next_run'], datetime):
                 p['next_run'] = calculate_next_run(p['time_range'])
                 save_json(STORAGE_FILE, st.session_state.storage)
             
-            # 時間チェック
             time_diff = (p['next_run'] - now).total_seconds()
             
             if time_diff <= 0:
-                # 投稿時間到来！
                 status_area.warning(f"🚀 {acc['name']} の投稿を実行中...")
                 suc, msg = post_to_threads(acc, p['text'], p['image_file'])
                 
-                # ログ
                 now_s = now.strftime('%H:%M:%S')
                 res_icon = "✅" if suc else "❌"
                 log_entry = f"{res_icon} {now_s} [{acc['name']}] {msg}"
                 st.session_state.logs.append(log_entry)
                 
-                # 次回のスケジュールを設定 (明日のランダム時間)
                 p['next_run'] = schedule_for_tomorrow(p['time_range'])
                 save_json(STORAGE_FILE, st.session_state.storage)
                 
                 status_area.success(f"完了！次回は {p['next_run'].strftime('%m/%d %H:%M')} です")
                 time.sleep(5)
-                
             else:
                 active_tasks += 1
         
-        # 待機状況の表示更新
         status_html = "### 📅 現在のスケジュール状況<br>"
         for p in st.session_state.storage:
             if p['acc_idx'] < len(st.session_state.accounts):
@@ -243,9 +224,9 @@ if st.session_state.is_bot_running:
         status_area.markdown(status_html, unsafe_allow_html=True)
         log_area.code("\n".join(reversed(st.session_state.logs)))
         
-        time.sleep(1) # 1秒ごとにチェック
+        time.sleep(1)
 
-# --- メイン画面 (設定モード) ---
+# --- メイン画面 ---
 st.title("THREADS AUTO MASTER ♾️")
 
 with st.sidebar:
@@ -255,7 +236,6 @@ with st.sidebar:
 
 tab1, tab2, tab3 = st.tabs(["① アカウント設定", "② 投稿作成 (アカウント別)", "③ ボット起動"])
 
-# --- ① アカウント ---
 with tab1:
     st.header("アカウント設定")
     with st.expander("➕ アカウント追加", expanded=True):
@@ -283,37 +263,29 @@ with tab1:
                 save_json(ACCOUNTS_FILE, st.session_state.accounts)
                 st.rerun()
 
-# --- ② 投稿作成 (アカウント別表示) ---
 with tab2:
     st.header("投稿ファクトリー")
     
     if not st.session_state.accounts:
         st.warning("まずはアカウントを追加してください")
     else:
-        # アカウント選択 (これがフィルターの親)
         acc_names = [a['name'] for a in st.session_state.accounts]
         selected_acc_name = st.selectbox("⚡ 作業するアカウントを選択", acc_names)
         selected_acc_idx = acc_names.index(selected_acc_name)
         
         st.markdown("---")
         
-        # --- 選択中のアカウントの収納ボックス ---
         st.subheader(f"📦 {selected_acc_name} の自動投稿リスト")
-        
-        # フィルタリングして表示
         my_storage = [p for p in st.session_state.storage if p['acc_idx'] == selected_acc_idx]
         
         if not my_storage:
             st.info("このアカウントには自動投稿が設定されていません。")
         else:
             for p in my_storage:
-                # 元のリストでのインデックスを探す（削除用）
                 original_idx = st.session_state.storage.index(p)
-                
                 info_text = f"内容: {p['text'][:20]}... "
                 if 'next_run' in p and p['next_run']:
                     info_text += f" | 🕒 次回: {p['next_run'].strftime('%H:%M')}"
-                
                 st.warning(info_text)
                 if st.button("🗑️ 設定を削除", key=f"del_s_{original_idx}"):
                     st.session_state.storage.pop(original_idx)
@@ -322,15 +294,13 @@ with tab2:
 
         st.markdown("---")
         
-        # --- 新規作成フォーム (キーにindexを使うことで中身を分離) ---
         st.subheader("📝 新しい自動投稿を設定")
-        
         with st.container():
-            # キーに idx を含めることで、アカウント切り替え時にフォームがリセットされるように見える
             chk_random = st.checkbox("⏰ ランダム時間を有効化", value=True, key=f"r_{selected_acc_idx}")
             time_range = (12, 15)
             if chk_random:
                 time_range = st.slider("時間帯", 0, 24, (9, 21), key=f"sl_{selected_acc_idx}")
+                # ここを修正：変数の値を埋め込んで表示
                 st.caption(f"※毎日 {time_range[0]}:00 〜 {time_range[1]}:00 の間で1回投稿します")
             
             c1, c2 = st.columns([1, 1])
@@ -343,31 +313,22 @@ with tab2:
                 if not txt_content and not img_file:
                     st.error("内容が空です")
                 else:
-                    # 同じアカウントの既存設定を消す（1垢1枠ルール）
                     st.session_state.storage = [p for p in st.session_state.storage if p['acc_idx'] != selected_acc_idx]
-                    
-                    # 新規追加
                     new_entry = {
-                        "text": txt_content,
-                        "image_file": img_file,
-                        "acc_idx": selected_acc_idx,
-                        "random": chk_random,
-                        "time_range": time_range,
-                        "next_run": calculate_next_run(time_range) # 初回スケジュール計算
+                        "text": txt_content, "image_file": img_file, "acc_idx": selected_acc_idx,
+                        "random": chk_random, "time_range": time_range,
+                        "next_run": calculate_next_run(time_range)
                     }
                     st.session_state.storage.append(new_entry)
                     save_json(STORAGE_FILE, st.session_state.storage)
-                    
                     st.toast(f"{selected_acc_name} のスケジュールを保存しました！")
                     time.sleep(1)
                     st.rerun()
 
-# --- ③ ボット起動 ---
 with tab3:
     st.header("🚀 自動投稿ボット")
     st.write("全ての設定が終わったら、ここでボットを起動してください。")
     st.info(f"現在、{len(st.session_state.storage)} 件のアカウントがスケジュールされています。")
-    
     if st.button("🚀 ボットを起動する (開始)", type="primary"):
         st.session_state.is_bot_running = True
         st.rerun()
