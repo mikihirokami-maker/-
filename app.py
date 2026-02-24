@@ -44,9 +44,6 @@ def save_json(file_path, data):
     serializable_data = []
     for item in data:
         item_copy = item.copy()
-        # 画像ファイルオブジェクトではなくURL文字列なのでそのまま保存可能
-        # if 'image_file' in item_copy:
-        #     del item_copy['image_file'] 
         if 'next_run' in item_copy and isinstance(item_copy['next_run'], datetime):
             item_copy['next_run'] = item_copy['next_run'].isoformat()
         serializable_data.append(item_copy)
@@ -59,7 +56,6 @@ if 'accounts' not in st.session_state: st.session_state.accounts = load_json(ACC
 if 'storage' not in st.session_state:
     loaded_st = load_json(STORAGE_FILE)
     for p in loaded_st: 
-        # URL管理に変更したため、ここでのクリア処理は不要（文字列としてロードする）
         if 'next_run' in p and p['next_run']:
             try:
                 p['next_run'] = datetime.fromisoformat(p['next_run'])
@@ -67,7 +63,6 @@ if 'storage' not in st.session_state:
                 p['next_run'] = None
     st.session_state.storage = loaded_st
 
-# 編集用の一時データを保持するセッション
 if 'edit_target_idx' not in st.session_state: st.session_state.edit_target_idx = None
 if 'logs' not in st.session_state: st.session_state.logs = []
 
@@ -80,14 +75,11 @@ def calculate_next_run(time_range):
     s, e = time_range
     if s >= e: e = 24
     now = get_jst_time()
-    
     target_h = random.randint(s, max(s, e-1))
     target_m = random.randint(0, 59)
     target_time = now.replace(hour=target_h, minute=target_m, second=0)
-    
     if target_time <= now:
         target_time = target_time + timedelta(days=1)
-        
     return target_time
 
 def schedule_for_tomorrow(time_range):
@@ -95,7 +87,6 @@ def schedule_for_tomorrow(time_range):
     if s >= e: e = 24
     now = get_jst_time()
     tomorrow = now + timedelta(days=1)
-    
     target_h = random.randint(s, max(s, e-1))
     target_m = random.randint(0, 59)
     target_time = tomorrow.replace(hour=target_h, minute=target_m, second=0)
@@ -118,17 +109,17 @@ def refresh_access_token(token):
         return res.get('access_token')
     except: return None
 
-# URLをそのまま使うためImgurアップロード関数は不要だが、互換性のため残すか削除
-# 今回はURLを直接使うのでこの関数は使用しません
-
 def post_to_threads(account, text, image_url_str=None):
     user_id = account['id']
     token = account['token']
     
-    # ここで image_url_str が有効なURLかチェック
+    # 複数URL対応: 改行で区切られたURLリストから有効なものを抽出して最初の1つを使用
+    # (※Threads APIのシングル投稿仕様に合わせるため)
     final_image_url = None
-    if image_url_str and image_url_str.startswith("http"):
-        final_image_url = image_url_str
+    if image_url_str:
+        urls = [u.strip() for u in image_url_str.split('\n') if u.strip().startswith("http")]
+        if urls:
+            final_image_url = urls[0] # リストの最初の画像を使用
     
     url_container = f"https://graph.threads.net/v1.0/{user_id}/threads"
     params = {'access_token': token, 'media_type': 'IMAGE' if final_image_url else 'TEXT'}
@@ -162,19 +153,13 @@ def post_to_threads(account, text, image_url_str=None):
 # --- メイン画面 ---
 st.title("THREADS AUTO MASTER ♾️")
 
-# サイドバー設定
 with st.sidebar:
     st.title("🤖 コントロールパネル")
     st.info(f"🇯🇵 {get_jst_time().strftime('%Y-%m-%d %H:%M:%S')}")
-    
-    # メインエンジン（ループ処理用）
     is_running = st.toggle("🔄 モニタリング機能 (ON/OFF)", value=False)
     if is_running:
         st.caption("※モニタリング中も以下のスイッチで個別制御可能です")
-    
     st.markdown("---")
-    
-    # アカウントごとの個別スイッチ
     st.subheader("📡 アカウント別稼働設定")
     if st.session_state.accounts:
         for i, acc in enumerate(st.session_state.accounts):
@@ -185,11 +170,8 @@ with st.sidebar:
                 st.rerun()
     else:
         st.caption("アカウントが登録されていません")
-
     st.markdown("---")
-    
     if st.button("ログクリア"): st.session_state.logs = []
-    
     st.markdown("### 📜 実行ログ")
     log_area = st.empty()
     if st.session_state.logs:
@@ -197,10 +179,8 @@ with st.sidebar:
     else:
         log_area.info("履歴なし")
 
-# タブ設定
 tab1, tab2 = st.tabs(["① アカウント管理", "② 投稿ファクトリー"])
 
-# --- ① アカウント管理タブ ---
 with tab1:
     st.header("アカウント設定")
     with st.expander("➕ アカウント追加", expanded=False):
@@ -221,7 +201,6 @@ with tab1:
                     st.success(f"追加: {info.get('name')}")
                     st.rerun()
                 else: st.error("取得失敗")
-    
     st.markdown("---")
     if st.session_state.accounts:
         st.write("### 登録済みアカウント一覧")
@@ -230,26 +209,20 @@ with tab1:
                 c1, c2 = st.columns([4, 1])
                 status_text = "🟢 稼働中" if acc.get('active', True) else "⚪ 停止中"
                 c1.write(f"**{acc['name']}** - {status_text}")
-                
                 if c2.button("削除", key=f"del_acc_{i}"):
                     st.session_state.accounts.pop(i)
                     save_json(ACCOUNTS_FILE, st.session_state.accounts)
                     st.rerun()
 
-# --- ② 投稿ファクトリータブ ---
 with tab2:
     st.header("投稿ファクトリー")
-    
     if not st.session_state.accounts:
         st.warning("まずはアカウントを追加してください")
     else:
         acc_names = [a['name'] for a in st.session_state.accounts]
         selected_acc_name = st.selectbox("⚡ 作業するアカウントを選択", acc_names)
         selected_acc_idx = acc_names.index(selected_acc_name)
-        
         st.markdown("---")
-        
-        # --- リスト表示 ---
         st.subheader(f"📦 {selected_acc_name} の自動投稿リスト")
         my_storage = [p for p in st.session_state.storage if p['acc_idx'] == selected_acc_idx]
         
@@ -268,9 +241,10 @@ with tab2:
                     else:
                         st.warning(info_text)
                     
-                    # 画像URLがあればプレビュー表示
+                    # 最初の画像のみプレビュー
                     if p.get('image_url'):
-                        st.image(p['image_url'], width=150)
+                        first_url = p['image_url'].split('\n')[0].strip()
+                        if first_url: st.image(first_url, width=150)
                     
                     c_del, c_edit = st.columns([1, 1])
                     if c_del.button("🗑️ 削除", key=f"del_s_{original_idx}"):
@@ -279,17 +253,13 @@ with tab2:
                             st.session_state.edit_target_idx = None
                         save_json(STORAGE_FILE, st.session_state.storage)
                         st.rerun()
-                    
                     if c_edit.button("✏️ 編集", key=f"edit_s_{original_idx}"):
                         st.session_state.edit_target_idx = original_idx
                         st.rerun()
-                        
                 except ValueError:
                     continue
 
         st.markdown("---")
-        
-        # --- 入力・編集フォーム ---
         form_title = "✏️ 投稿を編集" if st.session_state.edit_target_idx is not None else "📝 新しい自動投稿を追加"
         st.subheader(form_title)
         
@@ -313,15 +283,17 @@ with tab2:
                 st.caption(f"※毎日 {time_range[0]}:00 〜 {time_range[1]}:00 の間で1回投稿します")
             
             c1, c2 = st.columns([1, 1])
-            # 【変更点】ファイルアップローダーをテキスト入力（URL）に変更
-            image_url_input = c1.text_input("画像URL (https://...)", value=default_image_url, key="form_url")
+            # 【変更点】テキストエリアに変更し、複数URLを改行区切りで入力可能にする
+            image_url_input = c1.text_area("画像URL (複数可、改行区切り)", value=default_image_url, height=150, key="form_url")
             
-            # 画像URLが入力されていればプレビューを表示
+            # 入力されたURLのプレビュー（最初の1枚だけ）
             if image_url_input:
-                try:
-                    c1.image(image_url_input, caption="画像プレビュー", width=200)
-                except:
-                    c1.error("画像を表示できません")
+                first_url = image_url_input.split('\n')[0].strip()
+                if first_url:
+                    try:
+                        c1.image(first_url, caption="1枚目のプレビュー", width=200)
+                    except:
+                        c1.error("画像を表示できません")
 
             txt_content = c2.text_area("投稿本文", value=default_text, height=150, key="form_text")
             
@@ -332,23 +304,19 @@ with tab2:
                     st.error("内容が空です")
                 else:
                     new_next_run = calculate_next_run(time_range)
-                    
                     if st.session_state.edit_target_idx is not None:
-                        # 更新処理
                         idx = st.session_state.edit_target_idx
                         st.session_state.storage[idx]['text'] = txt_content
                         st.session_state.storage[idx]['random'] = chk_random
                         st.session_state.storage[idx]['time_range'] = time_range
                         st.session_state.storage[idx]['next_run'] = new_next_run
-                        st.session_state.storage[idx]['image_url'] = image_url_input # URLを保存
-                        
+                        st.session_state.storage[idx]['image_url'] = image_url_input
                         st.toast("設定を更新しました！")
                         st.session_state.edit_target_idx = None
                     else:
-                        # 新規追加処理
                         new_entry = {
                             "text": txt_content, 
-                            "image_url": image_url_input, # URLを保存
+                            "image_url": image_url_input,
                             "acc_idx": selected_acc_idx,
                             "random": chk_random, 
                             "time_range": time_range,
@@ -356,7 +324,6 @@ with tab2:
                         }
                         st.session_state.storage.append(new_entry)
                         st.toast(f"{selected_acc_name} のリストに追加しました！")
-                    
                     save_json(STORAGE_FILE, st.session_state.storage)
                     time.sleep(1)
                     st.rerun()
@@ -366,39 +333,28 @@ with tab2:
                     st.session_state.edit_target_idx = None
                     st.rerun()
 
-# --- 自動実行ロジック ---
 if is_running:
     if st.session_state.edit_target_idx is not None:
          st.sidebar.warning("⚠️ 編集作業中は一時停止を推奨します")
-    
     now = get_jst_time()
     run_triggered = False
-    
     for p in st.session_state.storage:
         if p['acc_idx'] >= len(st.session_state.accounts): continue
         acc = st.session_state.accounts[p['acc_idx']]
-        
-        if not acc.get('active', True):
-            continue
-
+        if not acc.get('active', True): continue
         if 'next_run' not in p or not isinstance(p['next_run'], datetime):
             p['next_run'] = calculate_next_run(p['time_range'])
             save_json(STORAGE_FILE, st.session_state.storage)
-        
         time_diff = (p['next_run'] - now).total_seconds()
-        
         if time_diff <= 0:
-            # 投稿関数にURLを渡すように変更
             suc, msg = post_to_threads(acc, p['text'], p.get('image_url'))
             now_s = now.strftime('%H:%M:%S')
             res_icon = "✅" if suc else "❌"
             log_entry = f"{res_icon} {now_s} [{acc['name']}] {msg}"
             st.session_state.logs.append(log_entry)
-            
             p['next_run'] = schedule_for_tomorrow(p['time_range'])
             save_json(STORAGE_FILE, st.session_state.storage)
             st.toast(f"🚀 {acc['name']} に投稿しました！")
             run_triggered = True
-
     time.sleep(10)
     st.rerun()
