@@ -65,6 +65,8 @@ if 'storage' not in st.session_state:
 
 if 'edit_target_idx' not in st.session_state: st.session_state.edit_target_idx = None
 if 'logs' not in st.session_state: st.session_state.logs = []
+# 編集中のURLリストを一時保持するセッション
+if 'temp_url_list' not in st.session_state: st.session_state.temp_url_list = [""]
 
 # --- ユーティリティ ---
 def get_jst_time():
@@ -113,13 +115,12 @@ def post_to_threads(account, text, image_url_str=None):
     user_id = account['id']
     token = account['token']
     
-    # 複数URL対応: 改行で区切られたURLリストから有効なものを抽出して最初の1つを使用
-    # (※Threads APIのシングル投稿仕様に合わせるため)
+    # 改行区切りの文字列からリストに変換し、最初の1つを使用
     final_image_url = None
     if image_url_str:
         urls = [u.strip() for u in image_url_str.split('\n') if u.strip().startswith("http")]
         if urls:
-            final_image_url = urls[0] # リストの最初の画像を使用
+            final_image_url = urls[0]
     
     url_container = f"https://graph.threads.net/v1.0/{user_id}/threads"
     params = {'access_token': token, 'media_type': 'IMAGE' if final_image_url else 'TEXT'}
@@ -251,10 +252,16 @@ with tab2:
                         st.session_state.storage.pop(original_idx)
                         if st.session_state.edit_target_idx == original_idx:
                             st.session_state.edit_target_idx = None
+                            st.session_state.temp_url_list = [""] # リセット
                         save_json(STORAGE_FILE, st.session_state.storage)
                         st.rerun()
                     if c_edit.button("✏️ 編集", key=f"edit_s_{original_idx}"):
                         st.session_state.edit_target_idx = original_idx
+                        # 既存のURLをリストに展開してセット
+                        current_urls = p.get('image_url', "").split('\n')
+                        st.session_state.temp_url_list = [u for u in current_urls if u]
+                        if not st.session_state.temp_url_list:
+                            st.session_state.temp_url_list = [""]
                         st.rerun()
                 except ValueError:
                     continue
@@ -266,14 +273,16 @@ with tab2:
         default_text = ""
         default_range = (12, 15)
         default_random = True
-        default_image_url = ""
         
         if st.session_state.edit_target_idx is not None and st.session_state.edit_target_idx < len(st.session_state.storage):
             target_data = st.session_state.storage[st.session_state.edit_target_idx]
             default_text = target_data.get('text', "")
             default_range = target_data.get('time_range', (12, 15))
             default_random = target_data.get('random', True)
-            default_image_url = target_data.get('image_url', "")
+        
+        # 新規作成時はリストを初期化（まだリセットされていない場合）
+        if st.session_state.edit_target_idx is None and len(st.session_state.temp_url_list) == 0:
+             st.session_state.temp_url_list = [""]
 
         with st.container():
             chk_random = st.checkbox("⏰ ランダム時間を有効化", value=default_random, key="form_random")
@@ -283,24 +292,37 @@ with tab2:
                 st.caption(f"※毎日 {time_range[0]}:00 〜 {time_range[1]}:00 の間で1回投稿します")
             
             c1, c2 = st.columns([1, 1])
-            # 【変更点】テキストエリアに変更し、複数URLを改行区切りで入力可能にする
-            image_url_input = c1.text_area("画像URL (複数可、改行区切り)", value=default_image_url, height=150, key="form_url")
             
-            # 入力されたURLのプレビュー（最初の1枚だけ）
-            if image_url_input:
-                first_url = image_url_input.split('\n')[0].strip()
-                if first_url:
-                    try:
-                        c1.image(first_url, caption="1枚目のプレビュー", width=200)
-                    except:
-                        c1.error("画像を表示できません")
+            with c1:
+                st.write("📷 画像URL設定")
+                # 動的入力欄の生成
+                url_inputs = []
+                for i, url_val in enumerate(st.session_state.temp_url_list):
+                    u_input = st.text_input(f"画像URL {i+1}", value=url_val, key=f"url_in_{i}")
+                    url_inputs.append(u_input)
+                    if u_input:
+                        try:
+                            st.image(u_input, width=100)
+                        except: pass
+                
+                # 追加ボタン
+                if st.button("＋ 画像を追加", key="add_url_btn"):
+                    st.session_state.temp_url_list.append("")
+                    st.rerun()
+                
+                # リストを更新（空文字除去は保存時または次回のrerun時）
+                st.session_state.temp_url_list = url_inputs
 
             txt_content = c2.text_area("投稿本文", value=default_text, height=150, key="form_text")
             
             btn_label = "🔄 更新して保存" if st.session_state.edit_target_idx is not None else "✅ リストに追加 (毎日自動化)"
             
             if st.button(btn_label, type="primary"):
-                if not txt_content and not image_url_input:
+                # 有効なURLだけを改行区切りで結合
+                valid_urls = [u for u in st.session_state.temp_url_list if u.strip()]
+                joined_urls = "\n".join(valid_urls)
+                
+                if not txt_content and not joined_urls:
                     st.error("内容が空です")
                 else:
                     new_next_run = calculate_next_run(time_range)
@@ -310,13 +332,14 @@ with tab2:
                         st.session_state.storage[idx]['random'] = chk_random
                         st.session_state.storage[idx]['time_range'] = time_range
                         st.session_state.storage[idx]['next_run'] = new_next_run
-                        st.session_state.storage[idx]['image_url'] = image_url_input
+                        st.session_state.storage[idx]['image_url'] = joined_urls
                         st.toast("設定を更新しました！")
                         st.session_state.edit_target_idx = None
+                        st.session_state.temp_url_list = [""] # リセット
                     else:
                         new_entry = {
                             "text": txt_content, 
-                            "image_url": image_url_input,
+                            "image_url": joined_urls,
                             "acc_idx": selected_acc_idx,
                             "random": chk_random, 
                             "time_range": time_range,
@@ -324,6 +347,7 @@ with tab2:
                         }
                         st.session_state.storage.append(new_entry)
                         st.toast(f"{selected_acc_name} のリストに追加しました！")
+                        st.session_state.temp_url_list = [""] # リセット
                     save_json(STORAGE_FILE, st.session_state.storage)
                     time.sleep(1)
                     st.rerun()
@@ -331,6 +355,7 @@ with tab2:
             if st.session_state.edit_target_idx is not None:
                 if st.button("キャンセル"):
                     st.session_state.edit_target_idx = None
+                    st.session_state.temp_url_list = [""] # リセット
                     st.rerun()
 
 if is_running:
