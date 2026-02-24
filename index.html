@@ -22,11 +22,10 @@ st.markdown("""
         text-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
     }
     /* Cards/Containers */
-    .css-1r6slb0, .stTextArea, .stTextInput {
+    .stTextArea, .stTextInput, .stDataFrame {
         background: rgba(255, 255, 255, 0.05) !important;
         border: 1px solid rgba(0, 242, 255, 0.2) !important;
         border-radius: 12px !important;
-        color: #fff !important;
     }
     /* Buttons */
     .stButton>button {
@@ -41,11 +40,6 @@ st.markdown("""
     .stButton>button:hover {
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(0, 114, 255, 0.6);
-    }
-    /* Input Labels */
-    label {
-        color: #b0b0b0 !important;
-        font-size: 0.9rem !important;
     }
     /* Sidebar */
     [data-testid="stSidebar"] {
@@ -132,6 +126,7 @@ with tab3:
             quote_text = st.text_input("引用時のコメント", "素晴らしい投稿です！")
     
     st.markdown("### 実行ログ")
+    # Sample data for UI visualization
     log_data = pd.DataFrame({
         "Time": ["10:00", "10:15", "10:30"],
         "Target": [target_account if target_account else "-", "-", "-"],
