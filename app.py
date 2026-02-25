@@ -4,7 +4,7 @@ import random
 import requests
 import json
 import os
-import uuid # 追加：キーリセット用
+import uuid
 from datetime import datetime, timedelta, timezone
 
 # --- ページ設定 ---
@@ -70,7 +70,7 @@ if 'storage' not in st.session_state:
 if 'edit_target_idx' not in st.session_state: st.session_state.edit_target_idx = None
 if 'logs' not in st.session_state: st.session_state.logs = []
 
-# 【追加】フォームリセット用のキー管理
+# フォームリセット用のキー管理
 if 'form_key_suffix' not in st.session_state: st.session_state.form_key_suffix = str(uuid.uuid4())
 
 # --- ユーティリティ ---
@@ -128,7 +128,10 @@ def upload_image_to_imgur(image_file):
         return data['data']['link'] if data['success'] else None
     except: return None
 
-def post_to_threads(account, text, image_files=None):
+def post_to_threads(account, text, image_files=None, dry_run=False):
+    """
+    dry_run=True の場合はAPIを叩かずに成功扱いとする
+    """
     user_id = account['id']
     token = account['token']
     
@@ -136,9 +139,18 @@ def post_to_threads(account, text, image_files=None):
     if image_files:
         for img_file in image_files:
             try:
+                # テストモードでも画像アップロードだけは試す（画像破損チェックのため）
                 url = upload_image_to_imgur(img_file)
                 if url: image_urls.append(url)
-            except: pass
+            except: 
+                if dry_run: return False, "画像のアップロードに失敗しました"
+                pass
+    
+    # --- テストモードならここで終了 ---
+    if dry_run:
+        msg = f"テスト成功 (投稿はしていません)。テキスト: {len(text)}文字, 画像: {len(image_urls)}枚"
+        return True, msg
+    # --------------------------------
     
     base_url = f"https://graph.threads.net/v1.0/{user_id}/threads"
     
@@ -320,14 +332,13 @@ with tab2:
         default_range = (12, 15)
         default_random = True
         
-        # 編集モードの場合のみ値をセット
         if st.session_state.edit_target_idx is not None and st.session_state.edit_target_idx < len(st.session_state.storage):
             target_data = st.session_state.storage[st.session_state.edit_target_idx]
             default_text = target_data.get('text', "")
             default_range = target_data.get('time_range', (12, 15))
             default_random = target_data.get('random', True)
 
-        # フォームリセット用のサフィックスをキーに追加
+        # フォームリセット用のサフィックス
         suffix = st.session_state.form_key_suffix
 
         with st.container():
@@ -351,40 +362,58 @@ with tab2:
             
             btn_label = "🔄 更新して保存" if st.session_state.edit_target_idx is not None else "✅ リストに追加 (毎日自動化)"
             
-            if st.button(btn_label, type="primary"):
-                if not txt_content and not img_files and (st.session_state.edit_target_idx is None or not st.session_state.storage[st.session_state.edit_target_idx].get('image_files')):
-                    st.error("内容が空です")
-                else:
-                    new_next_run = calculate_next_run(time_range)
-                    if st.session_state.edit_target_idx is not None:
-                        idx = st.session_state.edit_target_idx
-                        st.session_state.storage[idx]['text'] = txt_content
-                        st.session_state.storage[idx]['random'] = chk_random
-                        st.session_state.storage[idx]['time_range'] = time_range
-                        st.session_state.storage[idx]['next_run'] = new_next_run
-                        if img_files: 
-                            st.session_state.storage[idx]['image_files'] = img_files
-                        st.toast("設定を更新しました！")
-                        st.session_state.edit_target_idx = None
-                    else:
-                        new_entry = {
-                            "text": txt_content, 
-                            "image_files": img_files,
-                            "acc_idx": selected_acc_idx,
-                            "random": chk_random, 
-                            "time_range": time_range,
-                            "next_run": new_next_run
-                        }
-                        st.session_state.storage.append(new_entry)
-                        st.toast(f"{selected_acc_name} のリストに追加しました！")
-                        
-                        # 【重要】キーサフィックスを更新してフォームを強制リセット
-                        st.session_state.form_key_suffix = str(uuid.uuid4())
-                        
-                    save_json(STORAGE_FILE, st.session_state.storage)
-                    time.sleep(1)
-                    st.rerun()
+            c_submit, c_test = st.columns([2, 1])
             
+            with c_submit:
+                if st.button(btn_label, type="primary", use_container_width=True):
+                    if not txt_content and not img_files and (st.session_state.edit_target_idx is None or not st.session_state.storage[st.session_state.edit_target_idx].get('image_files')):
+                        st.error("内容が空です")
+                    else:
+                        new_next_run = calculate_next_run(time_range)
+                        if st.session_state.edit_target_idx is not None:
+                            idx = st.session_state.edit_target_idx
+                            st.session_state.storage[idx]['text'] = txt_content
+                            st.session_state.storage[idx]['random'] = chk_random
+                            st.session_state.storage[idx]['time_range'] = time_range
+                            st.session_state.storage[idx]['next_run'] = new_next_run
+                            if img_files: 
+                                st.session_state.storage[idx]['image_files'] = img_files
+                            st.toast("設定を更新しました！")
+                            st.session_state.edit_target_idx = None
+                        else:
+                            new_entry = {
+                                "text": txt_content, 
+                                "image_files": img_files,
+                                "acc_idx": selected_acc_idx,
+                                "random": chk_random, 
+                                "time_range": time_range,
+                                "next_run": new_next_run
+                            }
+                            st.session_state.storage.append(new_entry)
+                            st.toast(f"{selected_acc_name} のリストに追加しました！")
+                            
+                            st.session_state.form_key_suffix = str(uuid.uuid4())
+                            
+                        save_json(STORAGE_FILE, st.session_state.storage)
+                        time.sleep(1)
+                        st.rerun()
+            
+            with c_test:
+                # 【変更点】テスト投稿ボタン (Dry Run)
+                if st.button("🧪 テスト実行 (投稿なし)", use_container_width=True):
+                    if not txt_content and not img_files:
+                        st.error("画像かテキストを入力してください")
+                    else:
+                        acc = st.session_state.accounts[selected_acc_idx]
+                        with st.spinner("エラーチェック中..."):
+                            # dry_run=True で呼び出し
+                            suc, msg = post_to_threads(acc, txt_content, img_files, dry_run=True)
+                        
+                        if suc:
+                            st.success(msg)
+                        else:
+                            st.error(f"エラー検出: {msg}")
+
             if st.session_state.edit_target_idx is not None:
                 if st.button("キャンセル"):
                     st.session_state.edit_target_idx = None
@@ -417,7 +446,6 @@ if is_running:
             save_json(STORAGE_FILE, st.session_state.storage)
             st.toast(f"🚀 {acc['name']} に投稿しました！次回: {p['next_run'].strftime('%m/%d %H:%M')}")
             run_triggered = True
-            
     time.sleep(10)
     if run_triggered:
         st.rerun()
