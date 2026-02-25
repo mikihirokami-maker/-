@@ -4,6 +4,7 @@ import random
 import requests
 import json
 import os
+import uuid # 追加：キーリセット用
 from datetime import datetime, timedelta, timezone
 
 # --- ページ設定 ---
@@ -44,7 +45,6 @@ def save_json(file_path, data):
     serializable_data = []
     for item in data:
         item_copy = item.copy()
-        # 画像ファイルオブジェクト自体は保存できないため削除
         if 'image_files' in item_copy:
             del item_copy['image_files']
         if 'next_run' in item_copy and isinstance(item_copy['next_run'], datetime):
@@ -59,7 +59,7 @@ if 'accounts' not in st.session_state: st.session_state.accounts = load_json(ACC
 if 'storage' not in st.session_state:
     loaded_st = load_json(STORAGE_FILE)
     for p in loaded_st: 
-        p['image_files'] = [] # ロード時は空リストで初期化
+        p['image_files'] = [] 
         if 'next_run' in p and p['next_run']:
             try:
                 p['next_run'] = datetime.fromisoformat(p['next_run'])
@@ -69,6 +69,9 @@ if 'storage' not in st.session_state:
 
 if 'edit_target_idx' not in st.session_state: st.session_state.edit_target_idx = None
 if 'logs' not in st.session_state: st.session_state.logs = []
+
+# 【追加】フォームリセット用のキー管理
+if 'form_key_suffix' not in st.session_state: st.session_state.form_key_suffix = str(uuid.uuid4())
 
 # --- ユーティリティ ---
 def get_jst_time():
@@ -125,7 +128,6 @@ def upload_image_to_imgur(image_file):
         return data['data']['link'] if data['success'] else None
     except: return None
 
-# 複数枚投稿対応のロジック
 def post_to_threads(account, text, image_files=None):
     user_id = account['id']
     token = account['token']
@@ -141,13 +143,11 @@ def post_to_threads(account, text, image_files=None):
     base_url = f"https://graph.threads.net/v1.0/{user_id}/threads"
     
     try:
-        # 画像がない場合
         if not image_urls:
             params = {'access_token': token, 'media_type': 'TEXT', 'text': text}
             res = requests.post(base_url, data=params).json()
             creation_id = res.get('id')
             
-        # 画像が1枚の場合
         elif len(image_urls) == 1:
             params = {
                 'access_token': token, 
@@ -158,7 +158,6 @@ def post_to_threads(account, text, image_files=None):
             res = requests.post(base_url, data=params).json()
             creation_id = res.get('id')
             
-        # 画像が複数枚の場合（カルーセル）
         else:
             child_ids = []
             for img_url in image_urls:
@@ -193,7 +192,7 @@ def post_to_threads(account, text, image_files=None):
         
         if not creation_id: return False, f"投稿作成エラー: {res}"
         
-        time.sleep(5)
+        time.sleep(5) 
         url_publish = f"https://graph.threads.net/v1.0/{user_id}/threads_publish"
         pub_params = {'creation_id': creation_id, 'access_token': account['token']}
         pub_res = requests.post(url_publish, data=pub_params).json()
@@ -319,23 +318,27 @@ with tab2:
         
         default_text = ""
         default_range = (12, 15)
-        default_random = True # 初期状態はTrue
+        default_random = True
         
+        # 編集モードの場合のみ値をセット
         if st.session_state.edit_target_idx is not None and st.session_state.edit_target_idx < len(st.session_state.storage):
             target_data = st.session_state.storage[st.session_state.edit_target_idx]
             default_text = target_data.get('text', "")
             default_range = target_data.get('time_range', (12, 15))
             default_random = target_data.get('random', True)
 
+        # フォームリセット用のサフィックスをキーに追加
+        suffix = st.session_state.form_key_suffix
+
         with st.container():
-            chk_random = st.checkbox("⏰ ランダム時間を有効化", value=default_random, key="form_random")
+            chk_random = st.checkbox("⏰ ランダム時間を有効化", value=default_random, key=f"form_random_{suffix}")
             time_range = default_range
             if chk_random:
-                time_range = st.slider("時間帯", 0, 24, default_range, key="form_slider")
+                time_range = st.slider("時間帯", 0, 24, default_range, key=f"form_slider_{suffix}")
                 st.caption(f"※毎日 {time_range[0]}:00 〜 {time_range[1]}:00 の間で1回投稿します")
             
             c1, c2 = st.columns([1, 1])
-            img_files = c1.file_uploader("画像 (複数選択可)", type=['png','jpg','jpeg','webp','heic'], accept_multiple_files=True, key="form_file")
+            img_files = c1.file_uploader("画像 (複数選択可)", type=['png','jpg','jpeg','webp','heic'], accept_multiple_files=True, key=f"form_file_{suffix}")
             
             if img_files:
                 c1.write(f"📸 {len(img_files)}枚 選択中")
@@ -344,7 +347,7 @@ with tab2:
                     p_cols[i].image(img, width=80)
                 if len(img_files) > 3: c1.caption("...他")
 
-            txt_content = c2.text_area("投稿本文", value=default_text, height=150, key="form_text")
+            txt_content = c2.text_area("投稿本文", value=default_text, height=150, key=f"form_text_{suffix}")
             
             btn_label = "🔄 更新して保存" if st.session_state.edit_target_idx is not None else "✅ リストに追加 (毎日自動化)"
             
@@ -375,11 +378,8 @@ with tab2:
                         st.session_state.storage.append(new_entry)
                         st.toast(f"{selected_acc_name} のリストに追加しました！")
                         
-                        # リセット処理（キーを削除して初期化）
-                        if 'form_text' in st.session_state: del st.session_state['form_text']
-                        if 'form_file' in st.session_state: del st.session_state['form_file']
-                        if 'form_random' in st.session_state: del st.session_state['form_random']
-                        if 'form_slider' in st.session_state: del st.session_state['form_slider']
+                        # 【重要】キーサフィックスを更新してフォームを強制リセット
+                        st.session_state.form_key_suffix = str(uuid.uuid4())
                         
                     save_json(STORAGE_FILE, st.session_state.storage)
                     time.sleep(1)
@@ -399,20 +399,25 @@ if is_running:
         if p['acc_idx'] >= len(st.session_state.accounts): continue
         acc = st.session_state.accounts[p['acc_idx']]
         if not acc.get('active', True): continue
+        
         if 'next_run' not in p or not isinstance(p['next_run'], datetime):
             p['next_run'] = calculate_next_run(p['time_range'])
             save_json(STORAGE_FILE, st.session_state.storage)
+            
         time_diff = (p['next_run'] - now).total_seconds()
+        
         if time_diff <= 0:
             suc, msg = post_to_threads(acc, p['text'], p.get('image_files'))
             now_s = now.strftime('%H:%M:%S')
             res_icon = "✅" if suc else "❌"
             log_entry = f"{res_icon} {now_s} [{acc['name']}] {msg}"
             st.session_state.logs.append(log_entry)
+            
             p['next_run'] = schedule_for_tomorrow(p['time_range'])
             save_json(STORAGE_FILE, st.session_state.storage)
             st.toast(f"🚀 {acc['name']} に投稿しました！次回: {p['next_run'].strftime('%m/%d %H:%M')}")
             run_triggered = True
+            
     time.sleep(10)
     if run_triggered:
         st.rerun()
