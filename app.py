@@ -44,7 +44,7 @@ def save_json(file_path, data):
     serializable_data = []
     for item in data:
         item_copy = item.copy()
-        # 画像ファイルオブジェクト自体は保存できないため削除（本来はパス保存が必要だが今回はメモリ動作前提）
+        # 画像ファイルオブジェクト自体は保存できないため削除
         if 'image_files' in item_copy:
             del item_copy['image_files']
         if 'next_run' in item_copy and isinstance(item_copy['next_run'], datetime):
@@ -90,9 +90,11 @@ def schedule_for_tomorrow(time_range):
     s, e = time_range
     if s >= e: e = 24
     now = get_jst_time()
+    # 明日の日付を取得
     tomorrow = now + timedelta(days=1)
     target_h = random.randint(s, max(s, e-1))
     target_m = random.randint(0, 59)
+    # 明日の指定時間に設定
     target_time = tomorrow.replace(hour=target_h, minute=target_m, second=0)
     return target_time
 
@@ -341,8 +343,8 @@ with tab2:
                 st.caption(f"※毎日 {time_range[0]}:00 〜 {time_range[1]}:00 の間で1回投稿します")
             
             c1, c2 = st.columns([1, 1])
-            # 【変更点】accept_multiple_files=True に設定
-            img_files = c1.file_uploader("画像 (複数選択可)", type=['png','jpg','jpeg'], accept_multiple_files=True, key="form_file")
+            # 【修正】拡張子を追加 (webp, heic等)
+            img_files = c1.file_uploader("画像 (複数選択可)", type=['png','jpg','jpeg','webp','heic'], accept_multiple_files=True, key="form_file")
             
             if img_files:
                 c1.write(f"📸 {len(img_files)}枚 選択中")
@@ -361,7 +363,9 @@ with tab2:
                     st.error("内容が空です")
                 else:
                     new_next_run = calculate_next_run(time_range)
+                    
                     if st.session_state.edit_target_idx is not None:
+                        # 編集モード
                         idx = st.session_state.edit_target_idx
                         st.session_state.storage[idx]['text'] = txt_content
                         st.session_state.storage[idx]['random'] = chk_random
@@ -372,6 +376,7 @@ with tab2:
                         st.toast("設定を更新しました！")
                         st.session_state.edit_target_idx = None
                     else:
+                        # 新規追加モード
                         new_entry = {
                             "text": txt_content, 
                             "image_files": img_files,
@@ -382,6 +387,13 @@ with tab2:
                         }
                         st.session_state.storage.append(new_entry)
                         st.toast(f"{selected_acc_name} のリストに追加しました！")
+                        
+                        # 【修正】追加後にフォームをクリアするための処理
+                        # session_stateのキーを削除することで、次回レンダリング時にリセットされる
+                        if 'form_text' in st.session_state: del st.session_state['form_text']
+                        if 'form_file' in st.session_state: del st.session_state['form_file']
+                        if 'form_random' in st.session_state: st.session_state['form_random'] = True
+                        
                     save_json(STORAGE_FILE, st.session_state.storage)
                     time.sleep(1)
                     st.rerun()
@@ -400,19 +412,31 @@ if is_running:
         if p['acc_idx'] >= len(st.session_state.accounts): continue
         acc = st.session_state.accounts[p['acc_idx']]
         if not acc.get('active', True): continue
+        
+        # next_runがない場合の修復
         if 'next_run' not in p or not isinstance(p['next_run'], datetime):
             p['next_run'] = calculate_next_run(p['time_range'])
             save_json(STORAGE_FILE, st.session_state.storage)
+            
         time_diff = (p['next_run'] - now).total_seconds()
+        
         if time_diff <= 0:
             suc, msg = post_to_threads(acc, p['text'], p.get('image_files'))
             now_s = now.strftime('%H:%M:%S')
             res_icon = "✅" if suc else "❌"
             log_entry = f"{res_icon} {now_s} [{acc['name']}] {msg}"
             st.session_state.logs.append(log_entry)
+            
+            # 【重要】投稿後に次回時間を更新し、即座に保存
             p['next_run'] = schedule_for_tomorrow(p['time_range'])
             save_json(STORAGE_FILE, st.session_state.storage)
-            st.toast(f"🚀 {acc['name']} に投稿しました！")
+            
+            st.toast(f"🚀 {acc['name']} に投稿しました！次回: {p['next_run'].strftime('%m/%d %H:%M')}")
             run_triggered = True
+            
     time.sleep(10)
-    st.rerun()
+    # 投稿があった場合は画面を更新して次回予定を表示させる
+    if run_triggered:
+        st.rerun()
+    else:
+        st.rerun()
