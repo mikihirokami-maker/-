@@ -90,11 +90,9 @@ def schedule_for_tomorrow(time_range):
     s, e = time_range
     if s >= e: e = 24
     now = get_jst_time()
-    # 明日の日付を取得
     tomorrow = now + timedelta(days=1)
     target_h = random.randint(s, max(s, e-1))
     target_m = random.randint(0, 59)
-    # 明日の指定時間に設定
     target_time = tomorrow.replace(hour=target_h, minute=target_m, second=0)
     return target_time
 
@@ -143,13 +141,13 @@ def post_to_threads(account, text, image_files=None):
     base_url = f"https://graph.threads.net/v1.0/{user_id}/threads"
     
     try:
-        # 画像がない場合：テキストのみ
+        # 画像がない場合
         if not image_urls:
             params = {'access_token': token, 'media_type': 'TEXT', 'text': text}
             res = requests.post(base_url, data=params).json()
             creation_id = res.get('id')
             
-        # 画像が1枚の場合：シングル画像投稿
+        # 画像が1枚の場合
         elif len(image_urls) == 1:
             params = {
                 'access_token': token, 
@@ -160,9 +158,8 @@ def post_to_threads(account, text, image_files=None):
             res = requests.post(base_url, data=params).json()
             creation_id = res.get('id')
             
-        # 画像が複数枚の場合：カルーセル投稿
+        # 画像が複数枚の場合（カルーセル）
         else:
-            # 1. 各画像を個別のアイテムコンテナとして作成
             child_ids = []
             for img_url in image_urls:
                 child_params = {
@@ -174,11 +171,10 @@ def post_to_threads(account, text, image_files=None):
                 child_res = requests.post(base_url, data=child_params).json()
                 if 'id' in child_res:
                     child_ids.append(child_res['id'])
-                time.sleep(1) # レート制限回避
+                time.sleep(1) 
             
             if not child_ids: return False, "画像コンテナ作成失敗"
             
-            # 2. カルーセルコンテナを作成してまとめる
             carousel_params = {
                 'access_token': token,
                 'media_type': 'CAROUSEL',
@@ -188,19 +184,16 @@ def post_to_threads(account, text, image_files=None):
             res = requests.post(base_url, data=carousel_params).json()
             creation_id = res.get('id')
 
-        # トークン切れチェック & リトライ
         if not creation_id and 'error' in res:
             new_token = refresh_access_token(token)
             if new_token:
                 account['token'] = new_token
                 save_json(ACCOUNTS_FILE, st.session_state.accounts)
-                # 再帰的に1回だけリトライ（簡易実装）
                 return post_to_threads(account, text, image_files)
         
         if not creation_id: return False, f"投稿作成エラー: {res}"
         
-        # 公開処理
-        time.sleep(5) # 処理待ち
+        time.sleep(5)
         url_publish = f"https://graph.threads.net/v1.0/{user_id}/threads_publish"
         pub_params = {'creation_id': creation_id, 'access_token': account['token']}
         pub_res = requests.post(url_publish, data=pub_params).json()
@@ -301,7 +294,6 @@ with tab2:
                     else:
                         st.warning(info_text)
                     
-                    # 複数画像のプレビュー
                     if p.get('image_files'):
                         cols = st.columns(len(p['image_files']))
                         for idx, img in enumerate(p['image_files']):
@@ -327,7 +319,7 @@ with tab2:
         
         default_text = ""
         default_range = (12, 15)
-        default_random = True
+        default_random = True # 初期状態はTrue
         
         if st.session_state.edit_target_idx is not None and st.session_state.edit_target_idx < len(st.session_state.storage):
             target_data = st.session_state.storage[st.session_state.edit_target_idx]
@@ -343,12 +335,10 @@ with tab2:
                 st.caption(f"※毎日 {time_range[0]}:00 〜 {time_range[1]}:00 の間で1回投稿します")
             
             c1, c2 = st.columns([1, 1])
-            # 【修正】拡張子を追加 (webp, heic等)
             img_files = c1.file_uploader("画像 (複数選択可)", type=['png','jpg','jpeg','webp','heic'], accept_multiple_files=True, key="form_file")
             
             if img_files:
                 c1.write(f"📸 {len(img_files)}枚 選択中")
-                # プレビュー表示
                 p_cols = c1.columns(min(len(img_files), 3))
                 for i, img in enumerate(img_files[:3]):
                     p_cols[i].image(img, width=80)
@@ -363,9 +353,7 @@ with tab2:
                     st.error("内容が空です")
                 else:
                     new_next_run = calculate_next_run(time_range)
-                    
                     if st.session_state.edit_target_idx is not None:
-                        # 編集モード
                         idx = st.session_state.edit_target_idx
                         st.session_state.storage[idx]['text'] = txt_content
                         st.session_state.storage[idx]['random'] = chk_random
@@ -376,7 +364,6 @@ with tab2:
                         st.toast("設定を更新しました！")
                         st.session_state.edit_target_idx = None
                     else:
-                        # 新規追加モード
                         new_entry = {
                             "text": txt_content, 
                             "image_files": img_files,
@@ -388,11 +375,11 @@ with tab2:
                         st.session_state.storage.append(new_entry)
                         st.toast(f"{selected_acc_name} のリストに追加しました！")
                         
-                        # 【修正】追加後にフォームをクリアするための処理
-                        # session_stateのキーを削除することで、次回レンダリング時にリセットされる
+                        # リセット処理（キーを削除して初期化）
                         if 'form_text' in st.session_state: del st.session_state['form_text']
                         if 'form_file' in st.session_state: del st.session_state['form_file']
-                        if 'form_random' in st.session_state: st.session_state['form_random'] = True
+                        if 'form_random' in st.session_state: del st.session_state['form_random']
+                        if 'form_slider' in st.session_state: del st.session_state['form_slider']
                         
                     save_json(STORAGE_FILE, st.session_state.storage)
                     time.sleep(1)
@@ -412,30 +399,21 @@ if is_running:
         if p['acc_idx'] >= len(st.session_state.accounts): continue
         acc = st.session_state.accounts[p['acc_idx']]
         if not acc.get('active', True): continue
-        
-        # next_runがない場合の修復
         if 'next_run' not in p or not isinstance(p['next_run'], datetime):
             p['next_run'] = calculate_next_run(p['time_range'])
             save_json(STORAGE_FILE, st.session_state.storage)
-            
         time_diff = (p['next_run'] - now).total_seconds()
-        
         if time_diff <= 0:
             suc, msg = post_to_threads(acc, p['text'], p.get('image_files'))
             now_s = now.strftime('%H:%M:%S')
             res_icon = "✅" if suc else "❌"
             log_entry = f"{res_icon} {now_s} [{acc['name']}] {msg}"
             st.session_state.logs.append(log_entry)
-            
-            # 【重要】投稿後に次回時間を更新し、即座に保存
             p['next_run'] = schedule_for_tomorrow(p['time_range'])
             save_json(STORAGE_FILE, st.session_state.storage)
-            
             st.toast(f"🚀 {acc['name']} に投稿しました！次回: {p['next_run'].strftime('%m/%d %H:%M')}")
             run_triggered = True
-            
     time.sleep(10)
-    # 投稿があった場合は画面を更新して次回予定を表示させる
     if run_triggered:
         st.rerun()
     else:
