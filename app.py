@@ -100,64 +100,68 @@ def schedule_for_tomorrow(time_range):
     return target_time
 
 # --- API関連 ---
-def get_threads_user_info(token):
+def get_threads_user_info(token, proxy=None):
     url = "https://graph.threads.net/v1.0/me"
     params = {'fields': 'id,username,name', 'access_token': token}
+    proxies = {'http': proxy, 'https': proxy} if proxy else None
     try:
-        res = requests.get(url, params=params).json()
+        res = requests.get(url, params=params, proxies=proxies, timeout=10).json()
         return res if 'id' in res else None
     except: return None
 
-def refresh_access_token(token):
+def refresh_access_token(token, proxy=None):
     url = "https://graph.threads.net/refresh_access_token"
     params = {'grant_type': 'th_refresh_token', 'access_token': token}
+    proxies = {'http': proxy, 'https': proxy} if proxy else None
     try:
-        res = requests.get(url, params=params).json()
+        res = requests.get(url, params=params, proxies=proxies, timeout=10).json()
         return res.get('access_token')
     except: return None
 
-def upload_image_to_imgur(image_file):
+def upload_image_to_imgur(image_file, proxy=None):
     CLIENT_ID = "d3a6697416345f7" 
     url = "https://api.imgur.com/3/image"
     headers = {"Authorization": f"Client-ID {CLIENT_ID}"}
+    proxies = {'http': proxy, 'https': proxy} if proxy else None
     try:
         image_data = image_file.getvalue()
         payload = {"image": image_data}
-        response = requests.post(url, headers=headers, files=payload)
+        response = requests.post(url, headers=headers, files=payload, proxies=proxies, timeout=20)
         data = response.json()
         return data['data']['link'] if data['success'] else None
     except: return None
 
 def post_to_threads(account, text, image_files=None, dry_run=False):
-    """
-    dry_run=True の場合はAPIを叩かずに成功扱いとする
-    """
     user_id = account['id']
     token = account['token']
+    proxy = account.get('proxy') # プロキシ設定を取得
+    proxies = {'http': proxy, 'https': proxy} if proxy else None
     
     image_urls = []
     if image_files:
         for img_file in image_files:
             try:
-                # テストモードでも画像アップロードだけは試す（画像破損チェックのため）
-                url = upload_image_to_imgur(img_file)
+                # 画像アップロード時もプロキシを使用
+                url = upload_image_to_imgur(img_file, proxy=proxy)
                 if url: image_urls.append(url)
             except: 
                 if dry_run: return False, "画像のアップロードに失敗しました"
                 pass
     
-    # --- テストモードならここで終了 ---
+    # --- テストモード ---
     if dry_run:
-        msg = f"テスト成功 (投稿はしていません)。テキスト: {len(text)}文字, 画像: {len(image_urls)}枚"
-        return True, msg
-    # --------------------------------
-    
+        proxy_msg = f" (Proxy: {proxy})" if proxy else " (Proxyなし)"
+        if not text and not image_urls:
+            return False, "テキストまたは画像がありません"
+        return True, f"【テスト成功{proxy_msg}】API接続・画像処理は正常です（投稿はしていません）画像: {len(image_urls)}枚"
+    # --------------------
+
     base_url = f"https://graph.threads.net/v1.0/{user_id}/threads"
     
     try:
         if not image_urls:
             params = {'access_token': token, 'media_type': 'TEXT', 'text': text}
-            res = requests.post(base_url, data=params).json()
+            res = requests.post(base_url, data=params, proxies=proxies, timeout=20).json()
             creation_id = res.get('id')
             
         elif len(image_urls) == 1:
@@ -167,7 +171,7 @@ def post_to_threads(account, text, image_files=None, dry_run=False):
                 'image_url': image_urls[0],
                 'text': text
             }
-            res = requests.post(base_url, data=params).json()
+            res = requests.post(base_url, data=params, proxies=proxies, timeout=20).json()
             creation_id = res.get('id')
             
         else:
@@ -179,7 +183,7 @@ def post_to_threads(account, text, image_files=None, dry_run=False):
                     'image_url': img_url,
                     'is_carousel_item': 'true'
                 }
-                child_res = requests.post(base_url, data=child_params).json()
+                child_res = requests.post(base_url, data=child_params, proxies=proxies, timeout=20).json()
                 if 'id' in child_res:
                     child_ids.append(child_res['id'])
                 time.sleep(1) 
@@ -192,11 +196,11 @@ def post_to_threads(account, text, image_files=None, dry_run=False):
                 'children': ','.join(child_ids),
                 'text': text
             }
-            res = requests.post(base_url, data=carousel_params).json()
+            res = requests.post(base_url, data=carousel_params, proxies=proxies, timeout=20).json()
             creation_id = res.get('id')
 
         if not creation_id and 'error' in res:
-            new_token = refresh_access_token(token)
+            new_token = refresh_access_token(token, proxy=proxy)
             if new_token:
                 account['token'] = new_token
                 save_json(ACCOUNTS_FILE, st.session_state.accounts)
@@ -207,7 +211,7 @@ def post_to_threads(account, text, image_files=None, dry_run=False):
         time.sleep(5) 
         url_publish = f"https://graph.threads.net/v1.0/{user_id}/threads_publish"
         pub_params = {'creation_id': creation_id, 'access_token': account['token']}
-        pub_res = requests.post(url_publish, data=pub_params).json()
+        pub_res = requests.post(url_publish, data=pub_params, proxies=proxies, timeout=20).json()
         
         return ('id' in pub_res, f"ID: {pub_res.get('id')}" if 'id' in pub_res else f"公開エラー: {pub_res}")
         
@@ -249,30 +253,34 @@ with tab1:
     st.header("アカウント設定")
     with st.expander("➕ アカウント追加", expanded=False):
         new_token = st.text_input("Access Token", type="password")
-        new_secret = st.text_input("App Secret (任意)", type="password")
+        # 【追加】プロキシ設定入力欄
+        new_proxy = st.text_input("Proxy (任意: http://user:pass@ip:port)", placeholder="http://user:pass@ip:port")
+        
         if st.button("🔍 ID自動取得 & 保存"):
             if new_token:
-                info = get_threads_user_info(new_token)
+                # 登録時もプロキシを経由してチェック
+                info = get_threads_user_info(new_token, proxy=new_proxy)
                 if info:
                     st.session_state.accounts.append({
                         "name": f"{info.get('name')} (@{info.get('username')})", 
                         "id": info.get('id'), 
                         "token": new_token, 
-                        "secret": new_secret,
+                        "proxy": new_proxy, # プロキシを保存
                         "active": True
                     })
                     save_json(ACCOUNTS_FILE, st.session_state.accounts)
                     st.success(f"追加: {info.get('name')}")
                     st.rerun()
-                else: st.error("取得失敗")
+                else: st.error("取得失敗。トークンまたはプロキシを確認してください。")
     st.markdown("---")
     if st.session_state.accounts:
         st.write("### 登録済みアカウント一覧")
         for i, acc in enumerate(st.session_state.accounts):
             with st.container():
                 c1, c2 = st.columns([4, 1])
+                proxy_status = "🌐Proxy有" if acc.get('proxy') else "🏠Direct"
                 status_text = "🟢 稼働中" if acc.get('active', True) else "⚪ 停止中"
-                c1.write(f"**{acc['name']}** - {status_text}")
+                c1.write(f"**{acc['name']}** [{proxy_status}] - {status_text}")
                 if c2.button("削除", key=f"del_acc_{i}"):
                     st.session_state.accounts.pop(i)
                     save_json(ACCOUNTS_FILE, st.session_state.accounts)
@@ -338,7 +346,6 @@ with tab2:
             default_range = target_data.get('time_range', (12, 15))
             default_random = target_data.get('random', True)
 
-        # フォームリセット用のサフィックス
         suffix = st.session_state.form_key_suffix
 
         with st.container():
@@ -399,16 +406,13 @@ with tab2:
                         st.rerun()
             
             with c_test:
-                # 【変更点】テスト投稿ボタン (Dry Run)
                 if st.button("🧪 テスト実行 (投稿なし)", use_container_width=True):
                     if not txt_content and not img_files:
                         st.error("画像かテキストを入力してください")
                     else:
                         acc = st.session_state.accounts[selected_acc_idx]
                         with st.spinner("エラーチェック中..."):
-                            # dry_run=True で呼び出し
                             suc, msg = post_to_threads(acc, txt_content, img_files, dry_run=True)
-                        
                         if suc:
                             st.success(msg)
                         else:
@@ -441,7 +445,6 @@ if is_running:
             res_icon = "✅" if suc else "❌"
             log_entry = f"{res_icon} {now_s} [{acc['name']}] {msg}"
             st.session_state.logs.append(log_entry)
-            
             p['next_run'] = schedule_for_tomorrow(p['time_range'])
             save_json(STORAGE_FILE, st.session_state.storage)
             st.toast(f"🚀 {acc['name']} に投稿しました！次回: {p['next_run'].strftime('%m/%d %H:%M')}")
